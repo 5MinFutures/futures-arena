@@ -218,8 +218,8 @@ const App = () => {
     setErrors([]);
 
     try {
-      // Fetch strategies with their trades
-      const { data: strategies, error } = await supabase
+      // Fetch strategies (without embedded trades to avoid nested query limits)
+      const { data: strategies, error: strategiesError } = await supabase
         .from('strategies')
         .select(`
           strategy_id,
@@ -231,29 +231,38 @@ const App = () => {
           is_intraday,
           contract_multiplier,
           margin_required,
-          is_benchmark,
-          trades (
-            trade_date,
-            trade_time,
-            profit,
-            trade_type,
-            notes
-          )
-        `)
-        .order('trade_date', { foreignTable: 'trades', ascending: true })
-        .order('trade_time', { foreignTable: 'trades', ascending: true });
+          is_benchmark
+        `);
 
-      if (error) {
+      if (strategiesError) {
         const errorDetails = [
-          error.message,
-          error.details ? `Details: ${error.details}` : null,
-          error.hint ? `Hint: ${error.hint}` : null
+          strategiesError.message,
+          strategiesError.details ? `Details: ${strategiesError.details}` : null,
+          strategiesError.hint ? `Hint: ${strategiesError.hint}` : null
         ].filter(Boolean).join('. ');
         throw new Error(errorDetails || 'Supabase query failed');
       }
 
       if (!strategies || !Array.isArray(strategies) || strategies.length === 0) {
         throw new Error('No strategies found in database');
+      }
+
+      // Fetch trades for each strategy separately to avoid embedded resource limits
+      for (const strategy of strategies) {
+        const { data: trades, error: tradesError } = await supabase
+          .from('trades')
+          .select('trade_date, trade_time, profit, trade_type, notes')
+          .eq('strategy_id', strategy.strategy_id)
+          .order('trade_date', { ascending: true })
+          .order('trade_time', { ascending: true })
+          .limit(10000); // Explicit high limit to get all trades
+
+        if (tradesError) {
+          throw new Error(`Failed to fetch trades for ${strategy.strategy_id}: ${tradesError.message}`);
+        }
+
+        // Attach trades to strategy object
+        strategy.trades = trades || [];
       }
 
       // Transform database data to cleanedData format
