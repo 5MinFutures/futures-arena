@@ -14,7 +14,7 @@ import useMetrics from './hooks/useMetrics.ts';
 import usePortfolio from './hooks/usePortfolio.ts';
 import useSorting from './hooks/useSorting.ts';
 import useContractMultipliers from './hooks/useContractMultipliers.ts';
-import { parseCSV, processCurrencyColumns, buildCorrelationMatrix } from './utils/dataUtils.ts';
+import { parseCSV, processCurrencyColumns, buildCorrelationMatrix, calculateMetricsFromDatabase, buildFilenameFromMetadata } from './utils/dataUtils.ts';
 
 interface CleanedData {
   [key: string]: {
@@ -218,12 +218,32 @@ const App = () => {
     setErrors([]);
 
     try {
-      const { data, error } = await supabase
-        .from('csv_files')
-        .select('filename, file_content');
+      // Fetch strategies with their trades
+      const { data: strategies, error } = await supabase
+        .from('strategies')
+        .select(`
+          strategy_id,
+          market,
+          direction,
+          strategy_name,
+          display_name,
+          portfolio_hint,
+          is_intraday,
+          contract_multiplier,
+          margin_required,
+          is_benchmark,
+          trades (
+            trade_date,
+            trade_time,
+            profit,
+            trade_type,
+            notes
+          )
+        `)
+        .order('trades.trade_date', { foreignTable: 'trades', ascending: true })
+        .order('trades.trade_time', { foreignTable: 'trades', ascending: true });
 
       if (error) {
-        // Enhanced Supabase error handling with defensive checks
         const errorDetails = [
           error.message,
           error.details ? `Details: ${error.details}` : null,
@@ -232,87 +252,97 @@ const App = () => {
         throw new Error(errorDetails || 'Supabase query failed');
       }
 
-      if (!data || !Array.isArray(data)) {
-        throw new Error('Invalid data format received from Supabase');
+      if (!strategies || !Array.isArray(strategies) || strategies.length === 0) {
+        throw new Error('No strategies found in database');
       }
 
-      // Validate and create files with defensive error handling
-      const supabaseFiles: File[] = [];
+      // Transform database data to cleanedData format
+      const newCleanedData: CleanedData = { ...cleanedData };
+      const newFilenames: string[] = [];
       const fileErrors: string[] = [];
 
-      for (const row of data) {
+      for (const strategy of strategies) {
         try {
-          if (!row.filename || typeof row.filename !== 'string') {
-            fileErrors.push(`Invalid filename in row: ${JSON.stringify(row)}`);
+          if (!strategy.trades || strategy.trades.length === 0) {
+            fileErrors.push(`No trades found for strategy: ${strategy.strategy_id}`);
             continue;
           }
 
-          if (!row.file_content) {
-            fileErrors.push(`Missing file_content for ${row.filename}`);
+          // Build filename from metadata
+          const filename = buildFilenameFromMetadata(strategy) + '.csv';
+
+          // Calculate metrics from database trades
+          const metrics = calculateMetricsFromDatabase(strategy.trades, strategy);
+
+          if (!metrics) {
+            fileErrors.push(`Failed to calculate metrics for: ${strategy.strategy_id}`);
             continue;
           }
 
-          // Handle file_content whether it's a string or blob
-          const fileContent = typeof row.file_content === 'string'
-            ? row.file_content
-            : row.file_content;
+          // Build cleanedData structure matching CSV format
+          const dataRows: (string | number)[][] = [];
+          let cumEquity = 0;
 
-          const file = new File([fileContent], row.filename, { type: 'text/csv' });
-          supabaseFiles.push(file);
-        } catch (fileError: unknown) {
-          const fileErrorMsg = fileError instanceof Error ? fileError.message : 'Unknown error';
-          fileErrors.push(`Failed to create file ${row.filename}: ${fileErrorMsg}`);
+          strategy.trades.forEach((trade: any) => {
+            const profit = typeof trade.profit === 'number' ? trade.profit : parseFloat(trade.profit) || 0;
+            cumEquity += profit;
+            const datetime = `${trade.trade_date} ${trade.trade_time}`;
+
+            dataRows.push([
+              datetime,
+              profit.toString(),
+              cumEquity.toString()
+            ]);
+          });
+
+          newCleanedData[filename] = {
+            header: ["Date/Time", "Profit/Loss", "Cum Net Profit"],
+            data: dataRows,
+            rowCount: strategy.trades.length,
+            columnCount: 3
+          };
+
+          newFilenames.push(filename);
+
+          // Pre-populate contract multiplier from database
+          handleContractChange(filename, strategy.contract_multiplier || 1.0);
+
+        } catch (strategyError: unknown) {
+          const errorMsg = strategyError instanceof Error ? strategyError.message : 'Unknown error';
+          fileErrors.push(`Error processing ${strategy.strategy_id}: ${errorMsg}`);
         }
       }
 
-      // Report file creation errors if any
+      // Report errors if any
       if (fileErrors.length > 0) {
         setErrors(prev => [...prev, ...fileErrors]);
       }
 
-      if (supabaseFiles.length === 0) {
-        throw new Error('No valid files could be created from Supabase data');
+      if (newFilenames.length === 0) {
+        throw new Error('No valid strategies could be loaded from database');
       }
 
-      const existingFilenames = new Set(files.map(f => f.name));
-      const duplicates = supabaseFiles.filter(f => existingFilenames.has(f.name));
-      const duplicateNames = new Set(duplicates.map(d => d.name));
+      // Update cleanedData state
+      setCleanedData(newCleanedData);
 
-      if (duplicates.length > 0) {
-        const overwrite = window.confirm(
-          `The following files already exist: ${duplicates.map(f => f.name).join(', ')}. Overwrite?`
-        );
+      // Auto-select newly loaded strategies
+      setSelectedTradeLists(prev => {
+        const newSet = new Set(prev);
+        newFilenames.forEach(filename => newSet.add(filename));
+        return newSet;
+      });
 
-        if (overwrite) {
-          setFiles(prev => [
-            ...prev.filter(f => !duplicateNames.has(f.name)),
-            ...supabaseFiles
-          ]);
-          await handleFileUpload(supabaseFiles);
-        } else {
-          const newFiles = supabaseFiles.filter(f => !existingFilenames.has(f.name));
-          if (newFiles.length > 0) {
-            setFiles(prev => [...prev, ...newFiles]);
-            await handleFileUpload(newFiles);
-          }
-        }
-      } else {
-        setFiles(prev => [...prev, ...supabaseFiles]);
-        await handleFileUpload(supabaseFiles);
-      }
     } catch (error: unknown) {
-      // Enhanced error extraction
       let errorMessage = 'Unknown error';
       if (error instanceof Error) {
         errorMessage = error.message;
       } else if (typeof error === 'object' && error !== null) {
-        // Handle Supabase-specific error objects
         const supabaseError = error as any;
         errorMessage = supabaseError.message || supabaseError.error_description || JSON.stringify(error);
       } else if (typeof error === 'string') {
         errorMessage = error;
       }
-      setErrors(prev => [...prev, `Supabase fetch error: ${errorMessage}`]);
+      setErrors(prev => [...prev, `Database fetch error: ${errorMessage}`]);
     } finally {
       setProcessing(false);
     }

@@ -26,12 +26,13 @@ Core features migrated and working:
 - File upload progress tracking
 - Multiple file management
 
-### 🚧 In Progress (4/40)
-1. **Database Integration** - Python automation complete, frontend pending
+### 🚧 In Progress (3/40)
+1. **Database Integration** - Implementation complete, testing pending
    - Python script uploads trades automatically ✓
    - New database schema (portfolios, strategies, trades) ✓
-   - Frontend database fetch (in progress)
-   - Dual CSV/Database support (planned)
+   - Frontend database fetch ✓ (COMPLETED - commit c4fa57c)
+   - Dual CSV/Database support ✓ (COMPLETED - commit c4fa57c)
+   - User testing (pending)
    - **See:** `dev-docs/supabase-migration-plan.md`
 2. **Advanced filtering** - Partial implementation
    - Date filtering complete ✓
@@ -52,6 +53,42 @@ Core features migrated and working:
    - Stress testing
 
 ## Recent Completed Features
+
+### Database Fetch Implementation (Nov 16, 2025)
+**Status**: Implementation complete, ready for user testing
+**Commit**: c4fa57c
+**What Changed**:
+- Added `calculateMetricsFromDatabase()` function to dataUtils.ts (lines 567-671)
+- Added `buildFilenameFromMetadata()` helper function to dataUtils.ts (lines 548-557)
+- Added TypeScript interfaces: DatabaseTrade, StrategyMetadata (lines 43-62)
+- Completely rewrote `fetchFromSupabase()` in App.tsx (lines 216-349)
+- Changed from querying old `csv_files` table to new `strategies` + `trades` tables
+- Implemented single-row trade format processing (not entry/exit pairs)
+- Pre-populate contract multipliers from database metadata
+
+**Files Modified**:
+- `src/utils/dataUtils.ts`: +150 lines (2 new functions + interfaces)
+- `src/App.tsx`: +133 lines database fetch, -103 lines old CSV fetch code
+
+**How It Works**:
+1. User clicks "Load Data" button
+2. App queries Supabase `strategies` table with nested `trades` data
+3. For each strategy: builds filename from metadata (e.g., SI_Long_Test_TestStrategy1.csv)
+4. Calculates cumulative equity from individual trade profits
+5. Transforms to match existing `cleanedData` format
+6. Auto-selects strategies and displays metrics/charts
+
+**Backward Compatibility**:
+- CSV upload functionality untouched and fully working ✅
+- Both data sources can be used simultaneously ✅
+- All existing hooks, components, charts work with database data ✅
+
+**Next Steps for User**:
+1. Test "Load Data" button with 119 trades in database
+2. Verify metrics are calculated correctly
+3. Test CSV upload still works
+4. Verify equity curves display properly
+5. Confirm contract multipliers pre-populate
 
 ### Database Integration Planning (Nov 16, 2025)
 **Status**: Planning complete, ready for implementation

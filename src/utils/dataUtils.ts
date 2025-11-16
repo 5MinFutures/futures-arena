@@ -40,6 +40,27 @@ interface Metrics {
   [key: string]: any;
 }
 
+interface DatabaseTrade {
+  trade_date: string;
+  trade_time: string;
+  profit: number;
+  trade_type?: string | null;
+  notes?: string | null;
+}
+
+interface StrategyMetadata {
+  strategy_id: string;
+  market: string;
+  direction: string;
+  strategy_name: string;
+  display_name?: string;
+  portfolio_hint?: string | null;
+  is_intraday: boolean;
+  contract_multiplier: number;
+  margin_required?: number | null;
+  is_benchmark: boolean;
+}
+
 export const normalizeDate = (date: string | Date | null): Date | null => {
   if (!date) return null;
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -516,5 +537,135 @@ export const getSymbolPositionMargin = (filename: string | null): { symbol: stri
     margin: marginRate,
     isBenchmark,
     isStockBenchmark: isBenchmark && !(symbol in marginRates)
+  };
+};
+
+/**
+ * Build filename from strategy metadata
+ * Format: {market}_{direction}_{portfolio_hint}_{strategy_name}
+ * Example: SI_Long_Test_TestStrategy1
+ */
+export const buildFilenameFromMetadata = (metadata: StrategyMetadata): string => {
+  const parts = [
+    metadata.market,
+    metadata.direction,
+    metadata.portfolio_hint,
+    metadata.strategy_name
+  ].filter(Boolean);  // Remove null/undefined values
+
+  return parts.join('_');
+};
+
+/**
+ * Calculate metrics from database trade records (single-row format)
+ * Unlike CSV format which has entry/exit pairs, database has one row per trade
+ *
+ * @param trades - Array of trade objects from database
+ * @param strategyMetadata - Strategy metadata from strategies table
+ * @returns Metrics object matching calculateMetrics() format
+ */
+export const calculateMetricsFromDatabase = (
+  trades: DatabaseTrade[],
+  strategyMetadata: StrategyMetadata
+): Metrics | null => {
+  if (!trades || trades.length === 0) {
+    return null;
+  }
+
+  // Build filename from strategy metadata (not parsing)
+  const filename = buildFilenameFromMetadata(strategyMetadata);
+
+  // Build processed data with cumulative equity
+  const processedData: TradeData[] = [];
+  const tradeData: TradeData[] = [];
+  let cumEquity = 0;
+
+  for (const trade of trades) {
+    const datetime = `${trade.trade_date} ${trade.trade_time}`;
+    const profit = typeof trade.profit === 'number' ? trade.profit : parseFloat(trade.profit as any) || 0;
+
+    cumEquity += profit;
+
+    processedData.push({
+      date: new Date(datetime),
+      equity: profit,
+      cumEquity
+    });
+
+    tradeData.push({
+      date: new Date(datetime),
+      equity: profit,
+      cumEquity,
+      tradeList: filename
+    });
+  }
+
+  // Calculate metrics (same logic as calculateMetrics)
+  const netProfit = cumEquity;
+  const grossProfit = processedData.filter(d => d.equity > 0).reduce((sum, d) => sum + d.equity, 0);
+  const grossLoss = processedData.filter(d => d.equity < 0).reduce((sum, d) => sum + d.equity, 0);
+  const profitFactor = grossLoss !== 0 ? Math.abs(grossProfit / grossLoss) : Infinity;
+
+  const winningTrades = processedData.filter(d => d.equity > 0).length;
+  const totalTrades = processedData.length;
+  const winRate = totalTrades > 0 ? winningTrades / totalTrades : 0;
+
+  const wins = processedData.filter(d => d.equity > 0).map(d => d.equity);
+  const losses = processedData.filter(d => d.equity < 0).map(d => d.equity);
+
+  const averageWin = wins.length > 0 ? wins.reduce((sum, w) => sum + w, 0) / wins.length : 0;
+  const averageLoss = losses.length > 0 ? losses.reduce((sum, l) => sum + l, 0) / losses.length : 0;
+  const averageTrade = totalTrades > 0 ? netProfit / totalTrades : 0;
+
+  // Max drawdown calculation
+  let maxDrawdown = 0;
+  let peak = 0;
+  for (const trade of processedData) {
+    if (trade.cumEquity > peak) {
+      peak = trade.cumEquity;
+    }
+    const drawdown = peak - trade.cumEquity;
+    if (drawdown > maxDrawdown) {
+      maxDrawdown = drawdown;
+    }
+  }
+
+  const expectedValue = (winRate * averageWin) - ((1 - winRate) * Math.abs(averageLoss));
+  const largestWin = wins.length > 0 ? Math.max(...wins) : 0;
+  const largestLoss = losses.length > 0 ? Math.min(...losses) : 0;
+
+  // Use margin from database, fallback to calculated value
+  const margin = strategyMetadata.margin_required ||
+                 getMarginRate(strategyMetadata.market, filename, processedData);
+
+  return {
+    filename,
+    netProfit,
+    grossProfit,
+    grossLoss,
+    profitFactor,
+    averageWin,
+    averageLoss,
+    averageTrade,
+    winRate: winRate * 100,
+    expectedValue,
+    largestWin,
+    largestLoss,
+    maxDrawdown,
+    totalTrades,
+    winningTrades,
+    losingTrades: totalTrades - winningTrades,
+    margin,
+    startDate: processedData[0].date,
+    endDate: processedData[processedData.length - 1].date,
+    tradeData,
+    processedData,
+    symbol: strategyMetadata.market,
+    direction: strategyMetadata.direction,
+    intradayStatus: strategyMetadata.is_intraday ? 'DTH' : null,
+    strategyName: strategyMetadata.strategy_name,
+    isBenchmark: strategyMetadata.is_benchmark,
+    isFutures: strategyMetadata.market in marginRates,
+    originalFilename: filename + '.csv'
   };
 };
