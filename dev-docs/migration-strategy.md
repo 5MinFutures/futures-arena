@@ -597,6 +597,131 @@ grep -n "function" App.tsx
 
 ## Decision Log
 
+### 2025-11-16 - Supabase Database Migration Strategy
+
+**Context:** The project (renamed from Portfolio Buddy 2 to Futures Arena) needed to support automated trade data updates. Previously, users manually uploaded CSV files. A Python script on a Windows VPS now automatically uploads trades to a new Supabase database with tables: `portfolios`, `strategies`, `trades`, and `portfolio_strategies`. The frontend needed to fetch this data instead of querying the old `csv_files` table.
+
+**Options Considered:**
+
+1. **Option A: Dual-Mode Support (CSV + Database)**
+   - Keep existing CSV upload feature functional
+   - Add new database fetch capability
+   - Create separate `calculateMetricsFromDatabase()` function
+   - Transform database data to match existing `cleanedData` format
+   - **Pros:** Zero risk to existing functionality, backward compatible, allows gradual migration
+   - **Cons:** More code to maintain, two data paths
+
+2. **Option B: Database Only (Remove CSV Upload)**
+   - Replace CSV upload entirely with database fetch
+   - Refactor all code to work with database format directly
+   - Remove CSV parsing logic
+   - **Pros:** Simpler codebase, single data path, less maintenance
+   - **Cons:** High risk, breaks existing workflows, no fallback if database fails
+
+3. **Option C: Full Refactor (Single-Row Trade Format)**
+   - Modify `calculateMetrics()` to handle both formats
+   - Update all hooks and components to work with new format
+   - Change `cleanedData` structure throughout app
+   - **Pros:** Most "correct" architecturally, cleaner data model
+   - **Cons:** Very high risk, touches many files, hard to test, potential for regressions
+
+**Decision:** We chose **Option A - Dual-Mode Support**
+
+**Rationale:**
+
+1. **Risk Mitigation:** Preserves 100% of existing functionality. If database fetch fails, users can still upload CSV files.
+
+2. **Incremental Migration:** Allows testing database fetch thoroughly before considering removal of CSV upload.
+
+3. **Code Isolation:** New database logic is completely separate from CSV logic. Easy to debug, easy to rollback.
+
+4. **Developer Confidence:** CEO is beginner-level coder; safer approach reduces anxiety and allows small, testable changes.
+
+5. **Business Continuity:** CSV upload may still be useful for testing, historical data, or backup scenarios.
+
+6. **Implementation Speed:** Fastest path to working database integration (~4-8 hours vs weeks for full refactor).
+
+**Technical Decisions:**
+
+1. **New Function vs Modify Existing:**
+   - Create `calculateMetricsFromDatabase()` instead of modifying `calculateMetrics()`
+   - **Reason:** Separation of concerns, easier testing, zero risk to CSV path
+
+2. **Data Transformation Approach:**
+   - Transform database data to match existing `cleanedData` format
+   - **Reason:** Keeps all existing hooks, components, and charts working unchanged
+
+3. **Single-Row vs Entry/Exit Pairs:**
+   - Database uses single-row trades (simpler)
+   - CSV continues to use entry/exit pairs (legacy format)
+   - Frontend handles both formats
+   - **Reason:** Database format is simpler and matches Python script output
+
+4. **Contract Multiplier Handling:**
+   - Pre-populate from database `contract_multiplier` field
+   - Allow user override in UI
+   - **Reason:** Best of both worlds - automation + flexibility
+
+5. **Master Portfolio Auto-Load:**
+   - Automatically load strategies from "Master" portfolio (is_master=true)
+   - **Reason:** Simplest UX for v1, can add portfolio selector later
+
+**Consequences:**
+
+**Immediate (Positive):**
+- ✅ CSV upload continues to work identically
+- ✅ New database fetch enables automation
+- ✅ Both data sources can be used simultaneously
+- ✅ Low risk, isolated code changes
+- ✅ Fast implementation (4-8 hours estimated)
+
+**Immediate (Neutral):**
+- ⚠️ Two code paths for metric calculation (CSV vs Database)
+- ⚠️ Slightly more code to maintain
+- ⚠️ Need to keep both paths tested
+
+**Long-term (Positive):**
+- ✅ Foundation for real-time updates
+- ✅ Scalable to 100+ strategies
+- ✅ Enables future automation features
+- ✅ Clear migration path: can remove CSV later if desired
+
+**Long-term (To Monitor):**
+- ⚠️ May want to eventually remove CSV upload (tech debt)
+- ⚠️ Should add feature flag to enable/disable database fetch
+- ⚠️ Performance monitoring needed as data scales
+
+**Files Impacted:**
+- `src/utils/dataUtils.ts` - Add ~80 lines (new function)
+- `src/App.tsx` - Modify ~60 lines (update query)
+- `dev-docs/supabase-migration-plan.md` - Created (400 lines)
+- `dev-docs/project-overview.md` - Updated (migration status)
+- `.claude/skills/migration-tracker/SKILL.md` - Updated (task tracking)
+
+**Rollback Plan:**
+- If issues arise: Simply disable database fetch button
+- Full rollback: Revert 2 files (dataUtils.ts, App.tsx)
+- CSV upload provides 100% fallback functionality
+
+**Success Criteria:**
+- ✅ "Load Data" button fetches from database
+- ✅ 119 trades display correctly
+- ✅ Metrics match expected values
+- ✅ CSV upload still works
+- ✅ No regressions in existing features
+- ✅ Load time < 2 seconds
+
+**Next Steps:**
+1. Implement Phase 1: `calculateMetricsFromDatabase()` function
+2. Implement Phase 2: Update `fetchFromSupabase()` query
+3. Test with 119 existing trades
+4. Validate metrics accuracy
+5. Deploy to production
+6. Monitor for 1 week
+7. Plan Phase 2 enhancements (portfolio selector, auto-refresh)
+
+---
+
 ### Decisions will be documented here as migration progresses
 
 **Format:**

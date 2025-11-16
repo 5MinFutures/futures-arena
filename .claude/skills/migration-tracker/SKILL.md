@@ -26,15 +26,21 @@ Core features migrated and working:
 - File upload progress tracking
 - Multiple file management
 
-### 🚧 In Progress (3/40)
-1. **Advanced filtering** - Partial implementation
+### 🚧 In Progress (4/40)
+1. **Database Integration** - Python automation complete, frontend pending
+   - Python script uploads trades automatically ✓
+   - New database schema (portfolios, strategies, trades) ✓
+   - Frontend database fetch (in progress)
+   - Dual CSV/Database support (planned)
+   - **See:** `dev-docs/supabase-migration-plan.md`
+2. **Advanced filtering** - Partial implementation
    - Date filtering complete ✓
    - Symbol filtering needed
    - Strategy filtering needed
-2. **Export functionality** - CSV export only
+3. **Export functionality** - CSV export only
    - Excel export pending
    - PDF reports pending
-3. **Historical comparison** - Backend ready, UI pending
+4. **Historical comparison** - Backend ready, UI pending
    - Need UI for comparing multiple time periods
 
 ### ❌ Not Started (2/40)
@@ -46,6 +52,38 @@ Core features migrated and working:
    - Stress testing
 
 ## Recent Completed Features
+
+### Database Integration Planning (Nov 16, 2025)
+**Status**: Planning complete, ready for implementation
+**What Changed**:
+- Created comprehensive migration plan (`dev-docs/supabase-migration-plan.md`)
+- Analyzed new Supabase database schema (portfolios, strategies, trades tables)
+- Designed dual-mode support (CSV upload + database fetch)
+- Planned data transformation strategy (single-row trades vs entry/exit pairs)
+
+**New Database Schema**:
+- `portfolios`: Portfolio definitions with is_master flag
+- `strategies`: Strategy metadata (market, direction, contract_multiplier, etc.)
+- `trades`: Individual trade records (trade_date, trade_time, profit)
+- `portfolio_strategies`: Links portfolios to strategies
+
+**Implementation Plan**:
+1. Add `calculateMetricsFromDatabase()` function in dataUtils.ts (~80 lines)
+2. Update `fetchFromSupabase()` query in App.tsx (~60 lines changed)
+3. Transform database data to match cleanedData format
+4. Pre-populate contract multipliers from database
+5. Test with 119 existing trades
+
+**Current State**:
+- Python script on Windows VPS uploads trades automatically ✓
+- Database contains 1 strategy with 119 trades ✓
+- Frontend still queries old `csv_files` table (needs update)
+
+**Next Steps**:
+- Implement Phase 1: New calculation function
+- Implement Phase 2: Update Supabase query
+- Test dual CSV/Database support
+- Deploy to production
 
 ### Sortino Ratio (Oct 2025)
 **Commits**: 258ba3a, 9f25040

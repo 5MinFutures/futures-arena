@@ -438,6 +438,57 @@ C:\Users\kg129\Desktop\5MF\Portfolio_Buddy\src\App.tsx
 
 ---
 
+## Supabase Database Migration
+
+### Status: Planning Complete, Ready for Implementation (Nov 16, 2025)
+
+**Goal:** Migrate from CSV file uploads to automated database fetching
+
+**Background:**
+- Old approach: Manual CSV uploads to `csv_files` table
+- New approach: Python script on Windows VPS uploads trades automatically
+- New database schema: `portfolios`, `strategies`, `trades`, `portfolio_strategies`
+
+**Current State:**
+- ✅ Python automation script running on Windows VPS
+- ✅ New database schema created and populated
+- ✅ 1 strategy with 119 trades uploaded automatically
+- ❌ Frontend still queries old `csv_files` table (needs update)
+
+**Migration Plan:**
+See detailed plan: [dev-docs/supabase-migration-plan.md](supabase-migration-plan.md)
+
+**Key Changes Required:**
+1. Add `calculateMetricsFromDatabase()` function (src/utils/dataUtils.ts)
+2. Update `fetchFromSupabase()` query (src/App.tsx)
+3. Transform single-row trades to cleanedData format
+4. Pre-populate contract multipliers from database
+5. Preserve CSV upload as backup feature
+
+**Implementation Phases:**
+- **Phase 1:** Create database metrics calculation function (~2 hours)
+- **Phase 2:** Update Supabase query and transformation (~3 hours)
+- **Phase 3:** Testing and validation (~2 hours)
+- **Total Estimate:** 4-8 hours
+
+**Benefits:**
+- ✅ Real-time trade data (no manual uploads)
+- ✅ Automated updates via Python script
+- ✅ Simpler data format (single-row trades)
+- ✅ Scalable to 100+ strategies
+- ✅ CSV upload preserved for testing/backup
+
+**Risks:** Low (isolated changes, backward compatible)
+
+**Next Steps:**
+1. Implement calculateMetricsFromDatabase()
+2. Update fetchFromSupabase() query
+3. Test with 119 existing trades
+4. Validate metrics accuracy
+5. Deploy to production
+
+---
+
 **Document maintained by:** Current development team
-**Last comprehensive review:** October 30, 2025
-**Next review due:** After first migration feature completed
+**Last comprehensive review:** November 16, 2025
+**Next review due:** After database migration implementation
