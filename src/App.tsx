@@ -240,8 +240,8 @@ const App = () => {
             notes
           )
         `)
-        .order('trades.trade_date', { foreignTable: 'trades', ascending: true })
-        .order('trades.trade_time', { foreignTable: 'trades', ascending: true });
+        .order('trade_date', { foreignTable: 'trades', ascending: true })
+        .order('trade_time', { foreignTable: 'trades', ascending: true });
 
       if (error) {
         const errorDetails = [
