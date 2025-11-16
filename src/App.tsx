@@ -25,6 +25,28 @@ interface CleanedData {
   };
 }
 
+interface DatabaseTrade {
+  trade_date: string;
+  trade_time: string;
+  profit: number;
+  trade_type?: string | null;
+  notes?: string | null;
+}
+
+interface StrategyFromDB {
+  strategy_id: string;
+  market: string;
+  direction: string;
+  strategy_name: string;
+  display_name?: string;
+  portfolio_hint?: string | null;
+  is_intraday: boolean;
+  contract_multiplier: number;
+  margin_required?: number | null;
+  is_benchmark: boolean;
+  trades?: DatabaseTrade[]; // Added dynamically in fetchFromSupabase
+}
+
 const App = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [cleanedData, setCleanedData] = useState<CleanedData>({});
@@ -247,8 +269,11 @@ const App = () => {
         throw new Error('No strategies found in database');
       }
 
+      // Type assertion for strategies with trades property
+      const typedStrategies = strategies as StrategyFromDB[];
+
       // Fetch trades for each strategy separately to avoid embedded resource limits
-      for (const strategy of strategies) {
+      for (const strategy of typedStrategies) {
         const { data: trades, error: tradesError } = await supabase
           .from('trades')
           .select('trade_date, trade_time, profit, trade_type, notes')
@@ -262,7 +287,7 @@ const App = () => {
         }
 
         // Attach trades to strategy object
-        strategy.trades = trades || [];
+        strategy.trades = (trades as DatabaseTrade[]) || [];
       }
 
       // Transform database data to cleanedData format
@@ -270,7 +295,7 @@ const App = () => {
       const newFilenames: string[] = [];
       const fileErrors: string[] = [];
 
-      for (const strategy of strategies) {
+      for (const strategy of typedStrategies) {
         try {
           if (!strategy.trades || strategy.trades.length === 0) {
             fileErrors.push(`No trades found for strategy: ${strategy.strategy_id}`);
