@@ -26,22 +26,25 @@ Core features migrated and working:
 - File upload progress tracking
 - Multiple file management
 
+- **Database Integration** (Nov 16, 2025) - PRODUCTION READY ✓
+  - Python script uploads trades automatically ✓
+  - New database schema (portfolios, strategies, trades) ✓
+  - Frontend database fetch ✓ (commits c4fa57c through ee7cec8)
+  - Dual CSV/Database support ✓
+  - Format auto-detection (1-row vs 2-row) ✓
+  - User tested and verified ✓
+  - Merged to main and deployed ✓
+  - **See:** `dev-docs/supabase-migration-plan.md`
+
 ### 🚧 In Progress (3/40)
-1. **Database Integration** - Implementation complete, testing pending
-   - Python script uploads trades automatically ✓
-   - New database schema (portfolios, strategies, trades) ✓
-   - Frontend database fetch ✓ (COMPLETED - commit c4fa57c)
-   - Dual CSV/Database support ✓ (COMPLETED - commit c4fa57c)
-   - User testing (pending)
-   - **See:** `dev-docs/supabase-migration-plan.md`
-2. **Advanced filtering** - Partial implementation
+1. **Advanced filtering** - Partial implementation
    - Date filtering complete ✓
    - Symbol filtering needed
    - Strategy filtering needed
-3. **Export functionality** - CSV export only
+2. **Export functionality** - CSV export only
    - Excel export pending
    - PDF reports pending
-4. **Historical comparison** - Backend ready, UI pending
+3. **Historical comparison** - Backend ready, UI pending
    - Need UI for comparing multiple time periods
 
 ### ❌ Not Started (2/40)
@@ -54,41 +57,75 @@ Core features migrated and working:
 
 ## Recent Completed Features
 
-### Database Fetch Implementation (Nov 16, 2025)
-**Status**: Implementation complete, ready for user testing
-**Commit**: c4fa57c
-**What Changed**:
-- Added `calculateMetricsFromDatabase()` function to dataUtils.ts (lines 567-671)
-- Added `buildFilenameFromMetadata()` helper function to dataUtils.ts (lines 548-557)
-- Added TypeScript interfaces: DatabaseTrade, StrategyMetadata (lines 43-62)
-- Completely rewrote `fetchFromSupabase()` in App.tsx (lines 216-349)
-- Changed from querying old `csv_files` table to new `strategies` + `trades` tables
-- Implemented single-row trade format processing (not entry/exit pairs)
-- Pre-populate contract multipliers from database metadata
+### Database Fetch Implementation (Nov 16, 2025) ✅ COMPLETED
+**Status**: Production ready - Tested and deployed
+**Commits**: c4fa57c, a5ce0ec, 676de06, eba4c8d, ee7cec8, ae9202d
+**Merged to main**: d56497a (PR #1)
+
+**Implementation Journey** (6 commits):
+
+1. **Initial Implementation** (c4fa57c)
+   - Added `calculateMetricsFromDatabase()` and `buildFilenameFromMetadata()` to dataUtils.ts
+   - Rewrote `fetchFromSupabase()` in App.tsx
+   - Changed from old `csv_files` table to new `strategies` + `trades` schema
+   - Added TypeScript interfaces: DatabaseTrade, StrategyMetadata
+
+2. **Fix Query Syntax** (a5ce0ec)
+   - Fixed Supabase order clause syntax error
+   - Changed `order('trades.trade_date')` to `order('trade_date')` with foreignTable parameter
+   - Error: "failed to parse order (trades.trade_date.asc)"
+
+3. **Fix Trade Count Limit** (676de06)
+   - Discovered Supabase embedded resource limit (~60 rows)
+   - Separated queries: fetch strategies first, then fetch trades separately
+   - Added explicit `.limit(10000)` to get all trades
+   - Fixed: 59 trades → 119 trades ✅
+
+4. **Fix TypeScript Build Errors** (eba4c8d)
+   - Added StrategyFromDB interface with optional `trades?` property
+   - Added DatabaseTrade interface to App.tsx
+   - Fixed: "Property 'trades' does not exist" errors
+
+5. **Fix Metrics Calculation** (ee7cec8) ⭐ **CRITICAL FIX**
+   - Auto-detect format: 2-row (Entry/Exit) vs 1-row (database)
+   - Modified `calculateMetrics()` to check for "Entry/Exit" column
+   - If present → loop by 2 (old CSV format)
+   - If absent → loop by 1 (new database format)
+   - Fixed: Metrics now calculated correctly for all 119 trades ✅
+
+6. **Update Documentation** (ae9202d)
+   - Updated migration-tracker skill with implementation details
+   - Documented all changes and line numbers
+
+**Final Results**:
+- ✅ 119 trades loaded from database (not 59)
+- ✅ All metrics calculated correctly (win rate, profit factor, etc.)
+- ✅ CSV upload backward compatibility preserved
+- ✅ Dual-mode support: both CSV and database work simultaneously
+- ✅ Format auto-detection works seamlessly
+- ✅ User tested and verified working
+- ✅ Deployed to production
 
 **Files Modified**:
-- `src/utils/dataUtils.ts`: +150 lines (2 new functions + interfaces)
-- `src/App.tsx`: +133 lines database fetch, -103 lines old CSV fetch code
+- `src/utils/dataUtils.ts`: +235 lines (functions, interfaces, auto-detection)
+- `src/App.tsx`: +145 lines (database fetch, TypeScript types)
+- `.claude/skills/migration-tracker/SKILL.md`: Documentation updates
 
 **How It Works**:
 1. User clicks "Load Data" button
-2. App queries Supabase `strategies` table with nested `trades` data
-3. For each strategy: builds filename from metadata (e.g., SI_Long_Test_TestStrategy1.csv)
-4. Calculates cumulative equity from individual trade profits
-5. Transforms to match existing `cleanedData` format
-6. Auto-selects strategies and displays metrics/charts
+2. App fetches strategies from Supabase
+3. For each strategy, fetches ALL trades separately (no 60-row limit)
+4. Builds filename from metadata (e.g., SI_Long_Test_TestStrategy1.csv)
+5. Transforms to cleanedData format with 3 columns (no Entry/Exit column)
+6. `calculateMetrics()` auto-detects format and processes correctly
+7. Pre-populates contract multipliers from database
+8. Auto-selects strategies and displays metrics/charts
 
 **Backward Compatibility**:
-- CSV upload functionality untouched and fully working ✅
-- Both data sources can be used simultaneously ✅
-- All existing hooks, components, charts work with database data ✅
-
-**Next Steps for User**:
-1. Test "Load Data" button with 119 trades in database
-2. Verify metrics are calculated correctly
-3. Test CSV upload still works
-4. Verify equity curves display properly
-5. Confirm contract multipliers pre-populate
+- ✅ CSV upload with 4 columns (includes Entry/Exit) → 2-row processing
+- ✅ Database with 3 columns (no Entry/Exit) → 1-row processing
+- ✅ Both formats work simultaneously
+- ✅ All existing components, hooks, charts unchanged
 
 ### Database Integration Planning (Nov 16, 2025)
 **Status**: Planning complete, ready for implementation
