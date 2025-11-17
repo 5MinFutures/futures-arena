@@ -97,11 +97,16 @@ Get these values from your Supabase project settings.
 - ✅ Python script uploading trades automatically
 - ✅ Database schema created and populated
 - ✅ 1 strategy with 119 trades in database
-- 🚧 Frontend migration in progress (see `dev-docs/supabase-migration-plan.md`)
+- ✅ Frontend database integration COMPLETE (PR #1 merged: d56497a)
+- ✅ Format auto-detection (1-row vs 2-row) implemented
+- ✅ All 119 trades loading correctly
+- ✅ Dual CSV/Database mode working in production
+
+**See migration details:** `dev-docs/supabase-migration-plan.md`
 
 ### Future Features
 
-After initial database integration:
+After completing database integration:
 - Portfolio selector dropdown
 - Auto-refresh every X minutes
 - Real-time trade updates via WebSocket
