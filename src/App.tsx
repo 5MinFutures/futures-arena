@@ -240,9 +240,7 @@ const App = () => {
             notes
           )
         `)
-        .limit(100000, { foreignTable: 'trades' })
-        .order('trades.trade_date', { foreignTable: 'trades', ascending: true })
-        .order('trades.trade_time', { foreignTable: 'trades', ascending: true });
+        .limit(100000, { foreignTable: 'trades' });
 
       if (error) {
         const errorDetails = [
@@ -268,6 +266,13 @@ const App = () => {
             fileErrors.push(`No trades found for strategy: ${strategy.strategy_id}`);
             continue;
           }
+
+          // Sort trades chronologically (database ordering not reliable)
+          strategy.trades.sort((a: any, b: any) => {
+            const dateCompare = a.trade_date.localeCompare(b.trade_date);
+            if (dateCompare !== 0) return dateCompare;
+            return a.trade_time.localeCompare(b.trade_time);
+          });
 
           // Build filename from metadata
           const filename = buildFilenameFromMetadata(strategy) + '.csv';
