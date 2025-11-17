@@ -223,36 +223,74 @@ export const calculateMetrics = (data: { header: string[]; data: (string | numbe
   const header = data.header;
   const cumEquityIndex = header.findIndex(col => col && col.includes('Cum Net Profit'));
   const dateIndex = header.findIndex(col => col && col.includes('Date/Time'));
+  const profitLossIndex = header.findIndex(col => col && col.includes('Profit/Loss'));
   if (cumEquityIndex === -1) {
     return null;
   }
+
+  // Auto-detect format: 2-row (CSV with Entry/Exit) vs 1-row (database single-row)
+  const hasEntryExitColumn = header.some(col => col && col.includes('Entry/Exit'));
+
   const processedData: TradeData[] = [];
   const tradeData: TradeData[] = [];
-  for (let i = 0; i < data.data.length - 1; i += 2) {
-    const entryRow = data.data[i];
-    const exitRow = data.data[i + 1];
-    if (entryRow && exitRow &&
-      entryRow.length > Math.max(cumEquityIndex, dateIndex) &&
-      exitRow.length > Math.max(cumEquityIndex, dateIndex)) {
-      const date = exitRow[dateIndex] as string;
-      const entryEquityValue = entryRow[cumEquityIndex];
-      const exitEquityValue = exitRow[cumEquityIndex];
-      if (entryEquityValue && exitEquityValue &&
-        !entryEquityValue.toString().toLowerCase().includes('n/a') &&
-        !exitEquityValue.toString().toLowerCase().includes('n/a')) {
-        const tradeEquity = typeof entryEquityValue === 'number' ? entryEquityValue : parseFloat(entryEquityValue as string) || 0;
-        const cumEquity = typeof exitEquityValue === 'number' ? exitEquityValue : parseFloat(exitEquityValue as string) || 0;
-        processedData.push({
-          date: new Date(date),
-          equity: tradeEquity,
-          cumEquity
-        });
-        tradeData.push({
-          date: new Date(date),
-          equity: tradeEquity,
-          cumEquity,
-          tradeList: filename.replace('.csv', '')
-        });
+
+  if (hasEntryExitColumn) {
+    // OLD FORMAT: 2 rows per trade (entry + exit pairs)
+    for (let i = 0; i < data.data.length - 1; i += 2) {
+      const entryRow = data.data[i];
+      const exitRow = data.data[i + 1];
+      if (entryRow && exitRow &&
+        entryRow.length > Math.max(cumEquityIndex, dateIndex) &&
+        exitRow.length > Math.max(cumEquityIndex, dateIndex)) {
+        const date = exitRow[dateIndex] as string;
+        const entryEquityValue = entryRow[cumEquityIndex];
+        const exitEquityValue = exitRow[cumEquityIndex];
+        if (entryEquityValue && exitEquityValue &&
+          !entryEquityValue.toString().toLowerCase().includes('n/a') &&
+          !exitEquityValue.toString().toLowerCase().includes('n/a')) {
+          const tradeEquity = typeof entryEquityValue === 'number' ? entryEquityValue : parseFloat(entryEquityValue as string) || 0;
+          const cumEquity = typeof exitEquityValue === 'number' ? exitEquityValue : parseFloat(exitEquityValue as string) || 0;
+          processedData.push({
+            date: new Date(date),
+            equity: tradeEquity,
+            cumEquity
+          });
+          tradeData.push({
+            date: new Date(date),
+            equity: tradeEquity,
+            cumEquity,
+            tradeList: filename.replace('.csv', '')
+          });
+        }
+      }
+    }
+  } else {
+    // NEW FORMAT: 1 row per trade (database single-row format)
+    for (let i = 0; i < data.data.length; i++) {
+      const row = data.data[i];
+      if (row && row.length > Math.max(cumEquityIndex, dateIndex, profitLossIndex)) {
+        const date = row[dateIndex] as string;
+        const profitValue = row[profitLossIndex];
+        const cumEquityValue = row[cumEquityIndex];
+
+        if (profitValue !== undefined && cumEquityValue !== undefined &&
+          !profitValue.toString().toLowerCase().includes('n/a') &&
+          !cumEquityValue.toString().toLowerCase().includes('n/a')) {
+          const profit = typeof profitValue === 'number' ? profitValue : parseFloat(profitValue as string) || 0;
+          const cumEquity = typeof cumEquityValue === 'number' ? cumEquityValue : parseFloat(cumEquityValue as string) || 0;
+
+          processedData.push({
+            date: new Date(date),
+            equity: profit,
+            cumEquity
+          });
+          tradeData.push({
+            date: new Date(date),
+            equity: profit,
+            cumEquity,
+            tradeList: filename.replace('.csv', '')
+          });
+        }
       }
     }
   }
