@@ -25,6 +25,28 @@ interface CleanedData {
   };
 }
 
+interface DatabaseTrade {
+  trade_date: string;
+  trade_time: string;
+  profit: number;
+  trade_type?: string | null;
+  notes?: string | null;
+}
+
+interface StrategyFromDB {
+  strategy_id: string;
+  market: string;
+  direction: string;
+  strategy_name: string;
+  display_name?: string;
+  portfolio_hint?: string | null;
+  is_intraday: boolean;
+  contract_multiplier: number;
+  margin_required?: number | null;
+  is_benchmark: boolean;
+  trades?: DatabaseTrade[]; // Added dynamically in fetchFromSupabase
+}
+
 const App = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [cleanedData, setCleanedData] = useState<CleanedData>({});
@@ -218,8 +240,8 @@ const App = () => {
     setErrors([]);
 
     try {
-      // Fetch strategies with their trades
-      const { data: strategies, error } = await supabase
+      // Fetch strategies (without embedded trades to avoid nested query limits)
+      const { data: strategies, error: strategiesError } = await supabase
         .from('strategies')
         .select(`
           strategy_id,
@@ -231,23 +253,14 @@ const App = () => {
           is_intraday,
           contract_multiplier,
           margin_required,
-          is_benchmark,
-          trades (
-            trade_date,
-            trade_time,
-            profit,
-            trade_type,
-            notes
-          )
-        `)
-        .order('trades.trade_date', { foreignTable: 'trades', ascending: true })
-        .order('trades.trade_time', { foreignTable: 'trades', ascending: true });
+          is_benchmark
+        `);
 
-      if (error) {
+      if (strategiesError) {
         const errorDetails = [
-          error.message,
-          error.details ? `Details: ${error.details}` : null,
-          error.hint ? `Hint: ${error.hint}` : null
+          strategiesError.message,
+          strategiesError.details ? `Details: ${strategiesError.details}` : null,
+          strategiesError.hint ? `Hint: ${strategiesError.hint}` : null
         ].filter(Boolean).join('. ');
         throw new Error(errorDetails || 'Supabase query failed');
       }
@@ -256,12 +269,33 @@ const App = () => {
         throw new Error('No strategies found in database');
       }
 
+      // Type assertion for strategies with trades property
+      const typedStrategies = strategies as StrategyFromDB[];
+
+      // Fetch trades for each strategy separately to avoid embedded resource limits
+      for (const strategy of typedStrategies) {
+        const { data: trades, error: tradesError } = await supabase
+          .from('trades')
+          .select('trade_date, trade_time, profit, trade_type, notes')
+          .eq('strategy_id', strategy.strategy_id)
+          .order('trade_date', { ascending: true })
+          .order('trade_time', { ascending: true })
+          .limit(10000); // Explicit high limit to get all trades
+
+        if (tradesError) {
+          throw new Error(`Failed to fetch trades for ${strategy.strategy_id}: ${tradesError.message}`);
+        }
+
+        // Attach trades to strategy object
+        strategy.trades = (trades as DatabaseTrade[]) || [];
+      }
+
       // Transform database data to cleanedData format
       const newCleanedData: CleanedData = { ...cleanedData };
       const newFilenames: string[] = [];
       const fileErrors: string[] = [];
 
-      for (const strategy of strategies) {
+      for (const strategy of typedStrategies) {
         try {
           if (!strategy.trades || strategy.trades.length === 0) {
             fileErrors.push(`No trades found for strategy: ${strategy.strategy_id}`);
