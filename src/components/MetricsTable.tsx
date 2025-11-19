@@ -1,4 +1,4 @@
-import { TrendingUp, Settings, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, Settings, Plus, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import MasterContractControl from './MasterContractControl';
 import SortableHeader from './SortableHeader.tsx';
 import ContractInput from './ContractInput.tsx';
@@ -25,6 +25,8 @@ interface MetricsTableProps {
   updateSortPriority: (index: number, field: 'column' | 'direction', value: string) => void;
   clearSorting: () => void;
   applyAdvancedSort: () => void;
+  onDeleteStrategy: (filename: string) => void;
+  strategyIdMap: Record<string, string>;
 }
 
 const MetricsTable = ({
@@ -45,7 +47,9 @@ const MetricsTable = ({
   addSortPriority,
   updateSortPriority,
   clearSorting,
-  applyAdvancedSort
+  applyAdvancedSort,
+  onDeleteStrategy,
+  strategyIdMap
 }: MetricsTableProps) => {
   return (
     <div className="mb-4 sm:mb-6">
@@ -188,6 +192,7 @@ const MetricsTable = ({
               <SortableHeader column="expectedValue" sortConfig={sortConfig} handleSort={handleSort}>EV</SortableHeader>
               <SortableHeader column="totalTrades" sortConfig={sortConfig} handleSort={handleSort}>Trades</SortableHeader>
               <SortableHeader column="margin" sortConfig={sortConfig} handleSort={handleSort}>Margin Rate</SortableHeader>
+              <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -231,6 +236,15 @@ const MetricsTable = ({
                 <td className={`px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b ${metrics.expectedValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatNumber(metrics.expectedValue)}</td>
                 <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 border-b">{metrics.totalTrades}</td>
                 <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-blue-600 border-b font-medium">{formatNumber(metrics.margin)}</td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b text-center">
+                  <button 
+                    onClick={() => onDeleteStrategy(metrics.originalFilename)}
+                    className={`transition-colors p-1 rounded hover:bg-gray-100 ${strategyIdMap[metrics.originalFilename] ? 'text-red-500 hover:text-red-700' : 'text-gray-400 hover:text-gray-600'}`}
+                    title={strategyIdMap[metrics.originalFilename] ? "Delete from Database" : "Remove from View"}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

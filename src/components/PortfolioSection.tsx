@@ -95,6 +95,8 @@ interface PortfolioSectionProps {
   updateSortPriority: (index: number, field: 'column' | 'direction', value: string) => void;
   clearSorting: () => void;
   applyAdvancedSort: () => void;
+  onDeleteStrategy: (filename: string) => void;
+  strategyIdMap: Record<string, string>;
 }
 
 const PortfolioSection = ({
@@ -128,7 +130,9 @@ const PortfolioSection = ({
   removeSortPriority,
   updateSortPriority,
   clearSorting,
-  applyAdvancedSort
+  applyAdvancedSort,
+  onDeleteStrategy,
+  strategyIdMap
 }: PortfolioSectionProps) => {
   const [showAdvancedMetrics, setShowAdvancedMetrics] = useState(false);
   const [riskFreeRate, setRiskFreeRate] = useState<number>(4); // Default 4% annual risk-free rate
@@ -382,6 +386,8 @@ const PortfolioSection = ({
           updateSortPriority={updateSortPriority}
           clearSorting={clearSorting}
           applyAdvancedSort={applyAdvancedSort}
+          onDeleteStrategy={onDeleteStrategy}
+          strategyIdMap={strategyIdMap}
         />
       )}
       {selectedTradeLists.size > 0 && (

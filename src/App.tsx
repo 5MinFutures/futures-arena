@@ -64,6 +64,7 @@ const App = () => {
   const [correlationThreshold, setCorrelationThreshold] = useState<number>(0.5);
   const [correlationMatrix, setCorrelationMatrix] = useState<{ matrix: number[][]; strategies: string[]; size: number } | null>(null);
   const [correlationCalculating, setCorrelationCalculating] = useState<boolean>(false);
+  const [strategyIdMap, setStrategyIdMap] = useState<Record<string, string>>({});
 
   const { contractMultipliers, masterContractValue, setMasterContractValue, handleContractChange, applyMasterToAll } = useContractMultipliers();
   const { sortConfig, sortPriorities, showAdvancedSort, setShowAdvancedSort, handleSort, addSortPriority, removeSortPriority, updateSortPriority, clearSorting, applyAdvancedSort } = useSorting();
@@ -294,6 +295,7 @@ const App = () => {
       const newCleanedData: CleanedData = { ...cleanedData };
       const newFilenames: string[] = [];
       const fileErrors: string[] = [];
+      const newStrategyIdMap: Record<string, string> = { ...strategyIdMap };
 
       for (const strategy of typedStrategies) {
         try {
@@ -304,6 +306,9 @@ const App = () => {
 
           // Build filename from metadata
           const filename = buildFilenameFromMetadata(strategy) + '.csv';
+          
+          // Store mapping for deletion
+          newStrategyIdMap[filename] = strategy.strategy_id;
 
           // Calculate metrics from database trades
           const metrics = calculateMetricsFromDatabase(strategy.trades, strategy);
@@ -358,6 +363,7 @@ const App = () => {
 
       // Update cleanedData state
       setCleanedData(newCleanedData);
+      setStrategyIdMap(newStrategyIdMap);
 
       // Auto-select newly loaded strategies
       setSelectedTradeLists(prev => {
@@ -414,6 +420,43 @@ const App = () => {
     document.body.removeChild(element);
   };
 
+  const handleDeleteStrategy = async (filename: string) => {
+    const strategyId = strategyIdMap[filename];
+    
+    if (strategyId) {
+      // It's a database strategy
+      if (window.confirm(`Are you sure you want to PERMANENTLY delete strategy "${filename}" from the database? This cannot be undone.`)) {
+        try {
+          setProcessing(true);
+          const { error } = await supabase.from('strategies').delete().eq('strategy_id', strategyId);
+          
+          if (error) {
+            throw error;
+          }
+          
+          // If successful, remove from local state
+          removeFile(filename);
+          
+          // Also remove from strategyIdMap
+          setStrategyIdMap(prev => {
+            const next = { ...prev };
+            delete next[filename];
+            return next;
+          });
+          
+          alert('Strategy deleted successfully from database.');
+        } catch (error: any) {
+          alert(`Error deleting strategy: ${error.message || error}`);
+        } finally {
+          setProcessing(false);
+        }
+      }
+    } else {
+      // It's a local CSV file, just remove from view
+      removeFile(filename);
+    }
+  };
+
   return (
     <div className="container mx-auto p-2 sm:p-4 max-w-7xl">
       <ButtonSection onFetchSupabase={fetchFromSupabase} processing={processing} />
@@ -427,9 +470,9 @@ const App = () => {
       {errors.length > 0 && <ErrorList errors={errors} />}
       {files.length > 0 && <UploadedFilesList files={files} cleanedData={cleanedData} errors={errors} onRemove={removeFile} onExport={exportCleanedData} show={showUploadedFiles} onToggle={setShowUploadedFiles} />}
       {Object.keys(cleanedData).length > 0 && <AnalyticsControls showMetrics={showMetrics} setShowMetrics={setShowMetrics} showPortfolio={showPortfolio} setShowPortfolio={setShowPortfolio} showCorrelation={showCorrelation} setShowCorrelation={setShowCorrelation} />}
-      {showPortfolio && allMetrics && Object.keys(allMetrics).length > 0 && <PortfolioSection allMetrics={allMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={sortedAndFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} />}
+      {showPortfolio && allMetrics && Object.keys(allMetrics).length > 0 && <PortfolioSection allMetrics={allMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={sortedAndFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
       {showCorrelation && allMetrics && Object.keys(allMetrics).length > 0 && <CorrelationSection selectedTradeLists={selectedTradeLists} dailyReturnsMap={dailyReturnsMap} correlationThreshold={correlationThreshold} setCorrelationThreshold={setCorrelationThreshold} correlationMatrix={correlationMatrix} correlationCalculating={correlationCalculating} onExport={exportCorrelationData} allMetrics={allMetrics} />}
-      {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={sortedAndFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} />}
+      {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={sortedAndFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
       {Object.keys(cleanedData).length > 0 && <SessionComplete />}
     </div>
   );
