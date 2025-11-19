@@ -142,6 +142,8 @@ const fetchFromSupabase = async () => {
 
 ## Database Schema
 
+> **Note:** For a detailed overview of the current database architecture, including row counts and critical configuration, see [dev-docs/database-architecture.md](database-architecture.md).
+
 ### portfolios Table
 ```sql
 CREATE TABLE portfolios (

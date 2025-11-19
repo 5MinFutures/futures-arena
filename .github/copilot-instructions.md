@@ -13,7 +13,7 @@ Purpose: Help an AI agent be immediately productive in this React + TypeScript +
 - **CSV / metrics code:** `src/utils/dataUtils.ts` (parsing & metric calculations)
 - **State & domain logic:** `src/hooks/*` (`useMetrics.ts`, `usePortfolio.ts`, `useSorting.ts`)
 - **UI components:** `src/components/*` (small, focused presentational + control components)
-- **Developer docs:** `dev-docs/` (migration plans, project overview)
+- **Developer docs:** `dev-docs/` (migration plans, project overview, database architecture)
 
 Quick operational facts
 - Run dev server: `npm run dev` (Vite on port 8080 by default)
@@ -23,7 +23,7 @@ Quick operational facts
 
 Environment & integrations
 - The app requires `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in a `.env` at the project root. `src/supabaseClient.ts` will throw at import-time if they are missing — set these before running or editing code that imports the client.
-- Supabase schema: tables expected are `portfolios`, `strategies`, `trades`, `portfolio_strategies`. See `dev-docs/supabase-migration-plan.md` for details.
+- Supabase schema: tables expected are `portfolios`, `strategies`, `trades`, `portfolio_strategies`. See `dev-docs/database-architecture.md` for details.
 
 Where to make changes (practical examples)
 - To modify how trades are fetched/structured, inspect `src/App.tsx` -> `fetchFromSupabase`. It deliberately fetches strategies first, then trades per-strategy to avoid nested query limits (see `.limit(10000)`). Keep that pattern unless you also change backend/paging.

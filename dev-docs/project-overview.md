@@ -467,6 +467,9 @@ C:\Users\kg129\Desktop\5MF\Portfolio_Buddy\src\App.tsx
 **Migration Plan:**
 See detailed plan: [dev-docs/supabase-migration-plan.md](supabase-migration-plan.md)
 
+**Database Architecture:**
+See detailed architecture: [dev-docs/database-architecture.md](database-architecture.md)
+
 **Implemented Changes:**
 1. ✅ Added `calculateMetricsFromDatabase()` function (src/utils/dataUtils.ts:546-650)
 2. ✅ Added `buildFilenameFromMetadata()` helper (src/utils/dataUtils.ts:527-536)
