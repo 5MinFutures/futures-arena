@@ -12,6 +12,7 @@ A sophisticated trading analytics application for futures traders. Analyze tradi
 - 📉 **Interactive Charts** - Equity curves, drawdowns, and correlation heatmaps
 - 🔄 **Automated Updates** - Python script uploads trades automatically to database
 - 💾 **Dual Data Sources** - CSV upload (manual) + Database fetch (automated)
+- 🗑️ **Delete Strategies** - Remove strategies from database or view
 - 📱 **Responsive Design** - Works on desktop and mobile
 
 ## Tech Stack
@@ -92,7 +93,7 @@ VITE_SUPABASE_ANON_KEY=your_anon_key_here
 
 Get these values from your Supabase project settings.
 
-### Current Status (Nov 16, 2025)
+### Current Status (Dec 2, 2025)
 
 - ✅ Python script uploading trades automatically
 - ✅ Database schema created and populated
@@ -101,6 +102,7 @@ Get these values from your Supabase project settings.
 - ✅ Format auto-detection (1-row vs 2-row) implemented
 - ✅ All 119 trades loading correctly
 - ✅ Dual CSV/Database mode working in production
+- ✅ Delete functionality (c372ab7) - Remove strategies from database or view
 
 **See migration details:** `dev-docs/supabase-migration-plan.md`
 

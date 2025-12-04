@@ -7,7 +7,7 @@ description: Context for ongoing migration from old Portfolio Buddy app. Use whe
 
 ## Migration Status: 40 Features
 
-### ✅ Completed (35/40 - 87.5%)
+### ✅ Completed (36/40 - 90%)
 Core features migrated and working:
 - CSV upload and parsing with PapaParse
 - Supabase storage integration
@@ -159,6 +159,28 @@ Core features migrated and working:
 - Test dual CSV/Database support
 - Deploy to production
 
+### Strategy Delete Feature (Nov 19, 2025) ✅
+**Commit:** c372ab7a92d267eda3e540b298872484ef09e38d
+**Files:** App.tsx (+47), MetricsTable.tsx (+18), PortfolioSection.tsx (+8)
+
+**What it does:**
+- Delete database strategies permanently (red trash icon with confirmation)
+- Remove CSV strategies from view (gray trash icon, immediate)
+- strategyIdMap tracks DB vs CSV (App.tsx line 67)
+- handleDeleteStrategy with Supabase deletion (App.tsx lines 423-458)
+- Trash2 icon in Actions column (MetricsTable.tsx lines 1, 239-246)
+
+### Git Forensic Recovery (Dec 2, 2025) ✅
+**Problem:** Delete feature was "lost" (local repo behind origin/main)
+
+**Solution:**
+```bash
+git fetch origin
+git merge origin/main  # Fast-forward to c372ab7
+```
+
+**Key lesson:** Always check `git log origin/main` when work seems missing
+
 ### Sortino Ratio (Oct 2025)
 **Commits**: 258ba3a, 9f25040
 **What Changed**:
@@ -269,6 +291,16 @@ Core features migrated and working:
 ### Issue 3: No Select All Button
 **Status**: Feature doesn't exist
 **Note**: Previous skill version documented a "Select All bug" but this feature was either removed or never implemented. MetricsTable has individual selection but no "Select All" functionality.
+
+### Issue 4: Lost/Missing Code
+**Status**: Recoverable via git forensics
+**Problem**: Can't find recently added features or code seems to have disappeared
+**Solution**:
+1. Check remote: `git log origin/main --oneline -10`
+2. Search commits: `git log --all --grep="keyword"`
+3. Fast-forward if behind: `git merge origin/main`
+4. Use reflog to see recent HEAD positions: `git reflog`
+**Example**: On Dec 2, 2025, the delete feature was recovered by fast-forwarding from f4e752a to c372ab7
 
 ## Migration Priorities (ICE Scored)
 
