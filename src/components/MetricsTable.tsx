@@ -67,7 +67,7 @@ const MetricsTable = ({
           </div>
         </div>
         {showAdvancedSort && (
-          <div className="mt-3 sm:mt-4 p-3 sm:p-4 bg-white border border-gray-200 rounded-lg">
+          <div className="mt-3 sm:mt-4 p-3 sm:p-4 bg-white border border-gray-900 rounded-lg">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-2 sm:mb-3 gap-2">
               <h5 className="font-medium text-gray-800 text-sm sm:text-base">Multi-Column Sorting</h5>
               <button
@@ -106,7 +106,7 @@ const MetricsTable = ({
               </div>
             ))}
             {sortPriorities.length > 0 && (
-              <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-gray-200 flex flex-col sm:flex-row gap-2">
+              <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-gray-900 flex flex-col sm:flex-row gap-2">
                 <button
                   onClick={applyAdvancedSort}
                   className="text-xs sm:text-sm bg-blue-600 text-white px-3 sm:px-4 py-1 sm:py-2 rounded hover:bg-blue-700 mr-0 sm:mr-2"
@@ -125,7 +125,7 @@ const MetricsTable = ({
         )}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border border-gray-200 rounded-lg">
+        <table className="w-full border border-gray-900 rounded-lg">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-700 border-b cursor-pointer hover:bg-gray-100">
@@ -227,15 +227,15 @@ const MetricsTable = ({
                     <span className="text-gray-400">-</span>
                   )}
                 </td>
-                <td className={`px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b ${metrics.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatNumber(metrics.netProfit)}</td>
+                <td className={`px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b border-gray-900 ${metrics.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatNumber(metrics.netProfit)}</td>
                 <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 border-b">{metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)}</td>
                 <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 border-b">{metrics.winRate.toFixed(1)}%</td>
-                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-green-600 border-b">{formatNumber(metrics.averageWin)}</td>
-                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-600 border-b">{formatNumber(metrics.averageLoss)}</td>
-                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-600 border-b">{formatNumber(metrics.maxDrawdown)}</td>
-                <td className={`px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b ${metrics.expectedValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatNumber(metrics.expectedValue)}</td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-green-600 border-b border-gray-900">{formatNumber(metrics.averageWin)}</td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-600 border-b border-gray-900">{formatNumber(metrics.averageLoss)}</td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-red-600 border-b border-gray-900">{formatNumber(metrics.maxDrawdown)}</td>
+                <td className={`px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b border-gray-900 ${metrics.expectedValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatNumber(metrics.expectedValue)}</td>
                 <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 border-b">{metrics.totalTrades}</td>
-                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-blue-600 border-b font-medium">{formatNumber(metrics.margin)}</td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-blue-600 border-b border-gray-900 font-medium">{formatNumber(metrics.margin)}</td>
                 <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm border-b text-center">
                   <button 
                     onClick={() => onDeleteStrategy(metrics.originalFilename)}
