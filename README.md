@@ -104,7 +104,7 @@ Get these values from your Supabase project settings.
 - ✅ Dual CSV/Database mode working in production
 - ✅ Delete functionality (c372ab7) - Remove strategies from database or view
 
-**See migration details:** `dev-docs/supabase-migration-plan.md`
+**See schema details:** `dev-docs/database-architecture.md`
 
 ### Future Features
 
@@ -148,9 +148,7 @@ futures-arena/
 │   ├── App.tsx           # Main application
 │   └── supabaseClient.ts # Database client
 ├── dev-docs/             # Development documentation
-│   ├── supabase-migration-plan.md  # Database migration details
-│   ├── project-overview.md         # Architecture overview
-│   └── migration-strategy.md       # Feature migration tracking
+│   └── database-architecture.md  # Database schema reference
 └── .claude/              # Claude AI skills for development
 ```
 
@@ -170,17 +168,47 @@ npm run lint
 ### Documentation
 
 - **User Guide:** See this README
-- **Developer Docs:** See `dev-docs/` folder
-- **Migration Plan:** See `dev-docs/supabase-migration-plan.md`
+- **Database Schema:** See `dev-docs/database-architecture.md`
+- **AI Dev Skills:** See `.claude/skills/` (architecture, coding standards, context)
+
+## Troubleshooting
+
+**Port 8080 already in use:**
+```bash
+# Kill the process (Windows)
+netstat -ano | findstr :8080
+taskkill /PID <PID> /F
+# Or use a different port
+npm run dev -- --port 3000
+```
+
+**Supabase env vars not working** — variable names MUST start with `VITE_`, no quotes, restart server after changing `.env`.
+
+**Module not found (`@/...`)** — restart the dev server; if in VS Code, run `TypeScript: Restart TS Server` from the command palette.
+
+**Build fails** — run `npm run lint` first to surface all TypeScript errors before attempting `npm run build`.
+
+**Reset dependencies:**
+```bash
+rm -rf node_modules package-lock.json && npm install
+```
+
+## Lovable Platform
+
+This project supports a dual development workflow via [Lovable](https://lovable.dev/projects/68cf6fef-03c3-4f10-96e2-64490bd6308e):
+
+- **Lovable → local**: Changes made in Lovable auto-commit to GitHub — `git pull` to sync locally
+- **Local → Lovable**: Push to GitHub — Lovable reflects changes automatically
+- The `lovable-tagger` plugin (dev mode only) tags components so Lovable can identify them visually
 
 ## Contributing
 
 This project is for the 5minfutures trading community. For questions or contributions:
 
-1. Review `dev-docs/project-overview.md` for architecture
+1. Review `.claude/skills/architecture-reference/` for component/hook structure
 2. Follow coding standards in `.claude/skills/coding-standards/`
 3. Test thoroughly before committing
-4. Use conventional commit messages
+4. Use conventional commit messages (`feat:`, `fix:`, `chore:`)
 
 ## React + Vite Template Info
 
