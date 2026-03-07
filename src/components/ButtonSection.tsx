@@ -1,4 +1,5 @@
 import skoolLogo from '../assets/skool-logo.png';
+import { supabase } from '../supabaseClient';
 
 interface ButtonSectionProps {
   onFetchSupabase: () => void;
@@ -29,6 +30,15 @@ const ButtonSection = ({ onFetchSupabase, processing }: ButtonSectionProps) => {
         <img src={skoolLogo} alt="Skool" className="h-5 w-5" />
         <span>skool.com/futures</span>
       </a>
+
+      {/* Sign Out Button */}
+      <button
+        onClick={() => supabase.auth.signOut()}
+        className="w-full sm:w-auto px-4 py-2 min-h-[44px] bg-gray-200 text-gray-700 font-bold rounded-md hover:bg-gray-300 transition-colors"
+        aria-label="Sign out"
+      >
+        Sign Out
+      </button>
     </div>
   );
 };
