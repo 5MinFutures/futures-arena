@@ -236,13 +236,13 @@ const App = () => {
     });
   };
 
-  const fetchFromSupabase = async () => {
+  const fetchFromSupabase = async (accountIds: string[]) => {
     setProcessing(true);
     setErrors([]);
 
     try {
       // Fetch strategies (without embedded trades to avoid nested query limits)
-      const { data: strategies, error: strategiesError } = await supabase
+      let query = supabase
         .from('strategies')
         .select(`
           strategy_id,
@@ -256,6 +256,12 @@ const App = () => {
           margin_required,
           is_benchmark
         `);
+
+      if (accountIds.length > 0) {
+        query = query.in('account_id', accountIds);
+      }
+
+      const { data: strategies, error: strategiesError } = await query;
 
       if (strategiesError) {
         const errorDetails = [
@@ -459,7 +465,7 @@ const App = () => {
 
   return (
     <div className="container mx-auto p-2 sm:p-4 max-w-7xl">
-      <ButtonSection onFetchSupabase={fetchFromSupabase} processing={processing} />
+      <ButtonSection onFetchSupabase={(ids) => fetchFromSupabase(ids)} processing={processing} />
       <Header />
       <UploadSection onFileChange={(e) => {
         const target = e.target as HTMLInputElement;
