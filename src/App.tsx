@@ -94,38 +94,6 @@ const App = () => {
     }
   }, [showCorrelation, selectedTradeLists, dailyReturnsMap]);
 
-  // Dynamically load GoHighLevel iframe and script to avoid React DOM conflicts
-  useEffect(() => {
-    // Create iframe
-    const iframe = document.createElement('iframe');
-    iframe.src = 'https://www.5minfutures.com/widget/form/l3khVe6UJotvm6ZyPj1n';
-    iframe.style.cssText = 'display:none;width:100%;height:100%;border:none;border-radius:3px';
-    iframe.id = 'popup-l3khVe6UJotvm6ZyPj1n';
-    iframe.setAttribute('data-layout', "{'id':'POPUP'}");
-    iframe.setAttribute('data-trigger-type', 'showAfter');
-    iframe.setAttribute('data-trigger-value', '10'); // Immediate display
-    iframe.setAttribute('data-activation-type', 'alwaysActivated');
-    iframe.setAttribute('data-activation-value', '');
-    iframe.setAttribute('data-deactivation-type', 'leadCollected');
-    iframe.setAttribute('data-deactivation-value', '');
-    iframe.setAttribute('data-form-name', 'Trading Form ');
-    iframe.setAttribute('data-height', '340');
-    iframe.setAttribute('data-layout-iframe-id', 'popup-l3khVe6UJotvm6ZyPj1n');
-    iframe.setAttribute('data-form-id', 'l3khVe6UJotvm6ZyPj1n');
-    iframe.title = 'Trading Form ';
-    document.body.appendChild(iframe);
-
-    // Load script
-    const script = document.createElement('script');
-    script.src = 'https://www.5minfutures.com/js/form_embed.js';
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      if (document.body.contains(iframe)) document.body.removeChild(iframe);
-      if (document.body.contains(script)) document.body.removeChild(script);
-    };
-  }, []);
 
   const readFileContent = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
