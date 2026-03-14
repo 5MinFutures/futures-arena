@@ -4,18 +4,28 @@ import skoolLogo from '../assets/skool-logo.png';
 import { supabase } from '../supabaseClient';
 import LoginModal from './LoginModal';
 import AccountManager from './AccountManager';
-import AccountSelector from './AccountSelector';
+import AccountDropdown from './AccountDropdown';
 
 interface ButtonSectionProps {
-  onFetchSupabase: (accountIds: string[]) => void;
+  onFetchSupabase: () => void;
   processing: boolean;
+  /** Called whenever the user's linked account list changes (login, add, remove, logout). App owns linkedAccountIds. */
+  onAccountsLoaded: (ids: string[]) => void;
+  /** Controlled by App — which accounts are selected for display. */
+  selectedAccountIds: Set<string>;
+  onSelectedAccountIdsChange: (ids: Set<string>) => void;
 }
 
-const ButtonSection = ({ onFetchSupabase, processing }: ButtonSectionProps) => {
+const ButtonSection = ({
+  onFetchSupabase,
+  processing,
+  onAccountsLoaded,
+  selectedAccountIds,
+  onSelectedAccountIdsChange,
+}: ButtonSectionProps) => {
   const [session, setSession] = useState<Session | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [accountIds, setAccountIds] = useState<string[]>([]);
-  const [checkedAccountIds, setCheckedAccountIds] = useState<Set<string>>(new Set());
   const [showAccountManager, setShowAccountManager] = useState(false);
 
   const fetchAccountIds = async (userId: string) => {
@@ -28,7 +38,7 @@ const ButtonSection = ({ onFetchSupabase, processing }: ButtonSectionProps) => {
 
     const ids = data.map((row: { account_id: string }) => row.account_id);
     setAccountIds(ids);
-    setCheckedAccountIds(new Set(ids));
+    onAccountsLoaded(ids); // App sets linkedAccountIds + resets selectedAccountIds to all
 
     if (ids.length === 0) {
       setShowAccountManager(true);
@@ -48,46 +58,26 @@ const ButtonSection = ({ onFetchSupabase, processing }: ButtonSectionProps) => {
         fetchAccountIds(session.user.id);
       } else {
         setAccountIds([]);
-        setCheckedAccountIds(new Set());
+        onAccountsLoaded([]); // clears linkedAccountIds and selectedAccountIds in App
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  // Called by AccountManager when user adds or removes an account via the modal.
+  // All paths that mutate the account list must flow through here so App stays in sync.
   const handleAccountsChange = (newIds: string[]) => {
     setAccountIds(newIds);
-    setCheckedAccountIds(prev => {
-      const next = new Set(prev);
-      newIds.forEach(id => next.add(id));
-      Array.from(prev).forEach(id => { if (!newIds.includes(id)) next.delete(id); });
-      return next;
-    });
-  };
-
-  const handleToggle = (id: string) => {
-    setCheckedAccountIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const handleLoadData = () => {
-    const ids = Array.from(checkedAccountIds);
-    if (ids.length === 0) {
-      alert('Please select at least one account ID to load data.');
-      return;
-    }
-    onFetchSupabase(ids);
+    onAccountsLoaded(newIds); // App resets selectedAccountIds to include new/remove old accounts
   };
 
   return (
     <>
       <div className="flex flex-col sm:flex-row items-center sm:items-start justify-end gap-2 sm:gap-3 mb-2 sm:mb-3">
-        {/* Load Data Button */}
+        {/* Load Data — always fetches all linked accounts; does NOT affect selectedAccountIds */}
         <button
-          onClick={handleLoadData}
+          onClick={onFetchSupabase}
           disabled={processing}
           className="w-full sm:w-auto px-4 py-2 min-h-[44px] bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           aria-label="Load data from database"
@@ -127,12 +117,13 @@ const ButtonSection = ({ onFetchSupabase, processing }: ButtonSectionProps) => {
         )}
       </div>
 
-      {session && (
+      {/* Account filter dropdown — display-only, never triggers Supabase */}
+      {session && accountIds.length > 0 && (
         <div className="flex justify-end mb-4 sm:mb-6">
-          <AccountSelector
+          <AccountDropdown
             accountIds={accountIds}
-            checkedIds={checkedAccountIds}
-            onToggle={handleToggle}
+            selectedIds={selectedAccountIds}
+            onChange={onSelectedAccountIdsChange}
             onManageClick={() => setShowAccountManager(true)}
           />
         </div>

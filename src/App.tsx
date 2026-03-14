@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { supabase } from './supabaseClient';
 import ButtonSection from './components/ButtonSection.tsx';
 import Header from './components/Header.tsx';
@@ -35,6 +35,7 @@ interface DatabaseTrade {
 
 interface StrategyFromDB {
   strategy_id: string;
+  account_id?: string | null; // used to build strategyAccountMap for display filtering
   market: string;
   direction: string;
   strategy_name: string;
@@ -65,10 +66,30 @@ const App = () => {
   const [correlationMatrix, setCorrelationMatrix] = useState<{ matrix: number[][]; strategies: string[]; size: number } | null>(null);
   const [correlationCalculating, setCorrelationCalculating] = useState<boolean>(false);
   const [strategyIdMap, setStrategyIdMap] = useState<Record<string, string>>({});
+  // Maps filename → account_id; used to derive displayCleanedData without touching Supabase
+  const [strategyAccountMap, setStrategyAccountMap] = useState<Record<string, string>>({});
+  // Full list of accounts linked to the logged-in user (source of truth for fetching)
+  const [linkedAccountIds, setLinkedAccountIds] = useState<string[]>([]);
+  // Display-only filter: which accounts' strategies to show (never drives Supabase queries)
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+
+  // Derived view of cleanedData filtered by selectedAccountIds.
+  // CSV uploads (no entry in strategyAccountMap) always pass through.
+  // Guards that check "do we have any data?" still use cleanedData directly.
+  const displayCleanedData = useMemo(() => {
+    const result: CleanedData = {};
+    Object.keys(cleanedData).forEach(filename => {
+      const acctId = strategyAccountMap[filename];
+      if (!acctId || selectedAccountIds.has(acctId)) {
+        result[filename] = cleanedData[filename];
+      }
+    });
+    return result;
+  }, [cleanedData, strategyAccountMap, selectedAccountIds]);
 
   const { contractMultipliers, masterContractValue, setMasterContractValue, handleContractChange, applyMasterToAll } = useContractMultipliers();
   const { sortConfig, sortPriorities, showAdvancedSort, setShowAdvancedSort, handleSort, addSortPriority, removeSortPriority, updateSortPriority, clearSorting, applyAdvancedSort } = useSorting();
-  const { allMetrics, sortedAndFilteredMetrics } = useMetrics(cleanedData, contractMultipliers, sortConfig, sortPriorities);
+  const { allMetrics, sortedAndFilteredMetrics } = useMetrics(displayCleanedData, contractMultipliers, sortConfig, sortPriorities);
 
   // Wrapper function to apply master contract value to only visible (filtered) rows
   const applyMasterToFiltered = useCallback((value: number) => {
@@ -154,6 +175,11 @@ const App = () => {
       newSet.delete(filename);
       return newSet;
     });
+    setStrategyAccountMap(prev => {
+      const next = { ...prev };
+      delete next[filename];
+      return next;
+    });
   };
 
   const exportCleanedData = (filename: string) => {
@@ -204,7 +230,9 @@ const App = () => {
     });
   };
 
-  const fetchFromSupabase = async (accountIds: string[]) => {
+  // Fetches ALL strategies for all linked accounts — never filtered by selectedAccountIds.
+  // Display filtering is handled by the displayCleanedData memo.
+  const fetchFromSupabase = async () => {
     setProcessing(true);
     setErrors([]);
 
@@ -214,6 +242,7 @@ const App = () => {
         .from('strategies')
         .select(`
           strategy_id,
+          account_id,
           market,
           direction,
           strategy_name,
@@ -225,8 +254,8 @@ const App = () => {
           is_benchmark
         `);
 
-      if (accountIds.length > 0) {
-        query = query.in('account_id', accountIds);
+      if (linkedAccountIds.length > 0) {
+        query = query.in('account_id', linkedAccountIds);
       }
 
       const { data: strategies, error: strategiesError } = await query;
@@ -270,6 +299,7 @@ const App = () => {
       const newFilenames: string[] = [];
       const fileErrors: string[] = [];
       const newStrategyIdMap: Record<string, string> = { ...strategyIdMap };
+      const newStrategyAccountMap: Record<string, string> = { ...strategyAccountMap };
 
       for (const strategy of typedStrategies) {
         try {
@@ -283,6 +313,8 @@ const App = () => {
           
           // Store mapping for deletion
           newStrategyIdMap[filename] = strategy.strategy_id;
+          // Store account mapping for display filtering
+          if (strategy.account_id) newStrategyAccountMap[filename] = strategy.account_id;
 
           // Calculate metrics from database trades
           const metrics = calculateMetricsFromDatabase(strategy.trades, strategy);
@@ -338,6 +370,7 @@ const App = () => {
       // Update cleanedData state
       setCleanedData(newCleanedData);
       setStrategyIdMap(newStrategyIdMap);
+      setStrategyAccountMap(newStrategyAccountMap);
 
       // Auto-select newly loaded strategies
       setSelectedTradeLists(prev => {
@@ -411,8 +444,13 @@ const App = () => {
           // If successful, remove from local state
           removeFile(filename);
           
-          // Also remove from strategyIdMap
+          // Also remove from strategyIdMap and strategyAccountMap
           setStrategyIdMap(prev => {
+            const next = { ...prev };
+            delete next[filename];
+            return next;
+          });
+          setStrategyAccountMap(prev => {
             const next = { ...prev };
             delete next[filename];
             return next;
@@ -433,7 +471,16 @@ const App = () => {
 
   return (
     <div className="container mx-auto p-2 sm:p-4 max-w-7xl">
-      <ButtonSection onFetchSupabase={(ids) => fetchFromSupabase(ids)} processing={processing} />
+      <ButtonSection
+        onFetchSupabase={fetchFromSupabase}
+        processing={processing}
+        onAccountsLoaded={(ids) => {
+          setLinkedAccountIds(ids);
+          setSelectedAccountIds(new Set(ids)); // default: all accounts selected
+        }}
+        selectedAccountIds={selectedAccountIds}
+        onSelectedAccountIdsChange={setSelectedAccountIds}
+      />
       <Header />
       <UploadSection onFileChange={(e) => {
         const target = e.target as HTMLInputElement;

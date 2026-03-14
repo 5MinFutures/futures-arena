@@ -142,6 +142,8 @@ const usePortfolio = (
 
     const series = Array.from(selectedTradeLists).map((filename: string, index: number) => {
       const metrics = allMetrics[filename];
+      // Guard: strategy may be absent from allMetrics when its account is filtered out
+      if (!metrics) return null;
 
       // Filter processedData by date range
       const filteredData = metrics.processedData.filter((trade: any) => {
@@ -160,7 +162,7 @@ const usePortfolio = (
         };
       });
       return { filename, name: getDisplayName(metrics), color: getColorForIndex(index), data };
-    });
+    }).filter((s) => s !== null) as { filename: string; name: string; color: string; data: any[] }[];
 
     const combinedData: any[] = [];
     // Merge all individual data by date, filling nulls for missing dates
