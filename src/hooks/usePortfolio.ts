@@ -164,14 +164,21 @@ const usePortfolio = (
       return { filename, name: getDisplayName(metrics), color: getColorForIndex(index), data };
     }).filter((s) => s !== null) as { filename: string; name: string; color: string; data: any[] }[];
 
+    // Pre-build O(1) lookup maps per series — avoids O(n_dates) .find() in the merge loop
+    const seriesMaps = series.map(s => {
+      const m = new Map<string, number>();
+      s.data.forEach((d: any) => m.set(d.date, d.cumEquity));
+      return m;
+    });
+
     const combinedData: any[] = [];
     // Merge all individual data by date, filling nulls for missing dates
     const allDates = new Set(series.flatMap(s => s.data.map((d: any) => d.date)));
     Array.from(allDates).sort().forEach(date => {
       const entry: any = { date };
-      series.forEach(s => {
-        const point = s.data.find((d: any) => d.date === date);
-        entry[s.name] = point ? point.cumEquity : null;
+      series.forEach((s, i) => {
+        const val = seriesMaps[i].get(date);
+        entry[s.name] = val !== undefined ? val : null;
       });
       combinedData.push(entry);
     });

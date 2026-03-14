@@ -67,7 +67,8 @@ export const presetValues = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 
 
 export const sortableColumns = [
   { key: '_selected', label: 'Selection Status' },
-  { key: 'strategyName', label: 'Strategy Name' },
+  { key: 'portfolioHint', label: 'Portfolio' },
+  { key: 'strategyName', label: 'Strategy' },
   { key: 'symbol', label: 'Symbol' },
   { key: 'direction', label: 'Direction' },
   { key: 'intradayStatus', label: 'DTH' },

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import ButtonSection from './components/ButtonSection.tsx';
 import Header from './components/Header.tsx';
@@ -6,6 +6,7 @@ import UploadSection from './components/UploadSection.tsx';
 import ErrorList from './components/ErrorList.tsx';
 import UploadedFilesList from './components/UploadedFilesList.tsx';
 import AnalyticsControls from './components/AnalyticsControls.tsx';
+import PortfolioDropdown from './components/PortfolioDropdown.tsx';
 import PortfolioSection from './components/PortfolioSection.tsx';
 import CorrelationSection from './components/CorrelationSection.tsx';
 import MetricsTable from './components/MetricsTable.tsx';
@@ -54,8 +55,8 @@ const App = () => {
   const [processing, setProcessing] = useState<boolean>(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [showMetrics, setShowMetrics] = useState<boolean>(false);
-  const [showPortfolio, setShowPortfolio] = useState<boolean>(false);
-  const [showCorrelation, setShowCorrelation] = useState<boolean>(false);
+  const [showPortfolio, setShowPortfolio] = useState<boolean>(true);
+  const [showCorrelation, setShowCorrelation] = useState<boolean>(true);
   const [selectedTradeLists, setSelectedTradeLists] = useState<Set<string>>(new Set<string>());
   const [dateRange, setDateRange] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
   const [chartType, setChartType] = useState<string>('equity');
@@ -72,6 +73,8 @@ const App = () => {
   const [linkedAccountIds, setLinkedAccountIds] = useState<string[]>([]);
   // Display-only filter: which accounts' strategies to show (never drives Supabase queries)
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  // Display-only portfolio filter: which portfolios to show (client-side, no Supabase calls)
+  const [selectedPortfolioNames, setSelectedPortfolioNames] = useState<Set<string>>(new Set());
 
   // Derived view of cleanedData filtered by selectedAccountIds.
   // CSV uploads (no entry in strategyAccountMap) always pass through.
@@ -91,12 +94,52 @@ const App = () => {
   const { sortConfig, sortPriorities, showAdvancedSort, setShowAdvancedSort, handleSort, addSortPriority, removeSortPriority, updateSortPriority, clearSorting, applyAdvancedSort } = useSorting();
   const { allMetrics, sortedAndFilteredMetrics } = useMetrics(displayCleanedData, contractMultipliers, sortConfig, sortPriorities);
 
+  // Distinct sorted portfolio names from loaded metrics
+  const allPortfolioNames = useMemo(() =>
+    [...new Set(
+      Object.values(allMetrics || {})
+        .map((m: any) => m.portfolioHint || '--')
+        .filter(Boolean)
+    )].sort(),
+    [allMetrics]
+  );
+
+  // Auto-select all portfolios on first load only. Ref sentinel ensures this runs once
+  // per data-load, not on every checkbox toggle (avoids firing when selectedPortfolioNames.size changes).
+  const portfolioInitialized = useRef(false);
+  useEffect(() => {
+    if (!portfolioInitialized.current && allPortfolioNames.length > 0) {
+      portfolioInitialized.current = true;
+      setSelectedPortfolioNames(new Set(allPortfolioNames));
+    }
+  }, [allPortfolioNames.join(',')]);
+
+  const portfolioFilteredMetrics = useMemo(() => {
+    if (allPortfolioNames.length === 0) return sortedAndFilteredMetrics;
+    if (selectedPortfolioNames.size === 0) return [];
+    if (selectedPortfolioNames.size === allPortfolioNames.length) return sortedAndFilteredMetrics;
+    return sortedAndFilteredMetrics.filter((m: any) =>
+      selectedPortfolioNames.has(m.portfolioHint || '--')
+    );
+  }, [sortedAndFilteredMetrics, selectedPortfolioNames, allPortfolioNames.length]);
+
+  const portfolioFilteredAllMetrics = useMemo(() => {
+    if (allPortfolioNames.length === 0) return allMetrics;
+    if (selectedPortfolioNames.size === 0) return {};
+    if (selectedPortfolioNames.size === allPortfolioNames.length) return allMetrics;
+    return Object.fromEntries(
+      Object.entries(allMetrics || {}).filter(([, m]: [string, any]) =>
+        selectedPortfolioNames.has((m as any).portfolioHint || '--')
+      )
+    );
+  }, [allMetrics, selectedPortfolioNames, allPortfolioNames.length]);
+
   // Wrapper function to apply master contract value to only visible (filtered) rows
   const applyMasterToFiltered = useCallback((value: number) => {
-    const visibleKeys = sortedAndFilteredMetrics.map(m => m.originalFilename);
+    const visibleKeys = portfolioFilteredMetrics.map((m: any) => m.originalFilename);
     applyMasterToAll(value, visibleKeys);
-  }, [sortedAndFilteredMetrics, applyMasterToAll]);
-  const { portfolioData, individualChartsData, dailyReturnsMap } = usePortfolio(allMetrics || {}, selectedTradeLists, dateRange, normalizeEquity, startingCapital, contractMultipliers);
+  }, [portfolioFilteredMetrics, applyMasterToAll]);
+  const { portfolioData, individualChartsData, dailyReturnsMap } = usePortfolio(portfolioFilteredAllMetrics || {}, selectedTradeLists, dateRange, normalizeEquity, startingCapital, contractMultipliers);
 
   // Auto-enable "Show Metrics" when files are added
   useEffect(() => {
@@ -491,9 +534,16 @@ const App = () => {
       {errors.length > 0 && <ErrorList errors={errors} />}
       {files.length > 0 && <UploadedFilesList files={files} cleanedData={cleanedData} errors={errors} onRemove={removeFile} onExport={exportCleanedData} show={showUploadedFiles} onToggle={setShowUploadedFiles} />}
       {Object.keys(cleanedData).length > 0 && <AnalyticsControls showMetrics={showMetrics} setShowMetrics={setShowMetrics} showPortfolio={showPortfolio} setShowPortfolio={setShowPortfolio} showCorrelation={showCorrelation} setShowCorrelation={setShowCorrelation} />}
-      {showPortfolio && allMetrics && Object.keys(allMetrics).length > 0 && <PortfolioSection allMetrics={allMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={sortedAndFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
-      {showCorrelation && allMetrics && Object.keys(allMetrics).length > 0 && <CorrelationSection selectedTradeLists={selectedTradeLists} dailyReturnsMap={dailyReturnsMap} correlationThreshold={correlationThreshold} setCorrelationThreshold={setCorrelationThreshold} correlationMatrix={correlationMatrix} correlationCalculating={correlationCalculating} onExport={exportCorrelationData} allMetrics={allMetrics} />}
-      {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={sortedAndFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
+      {Object.keys(cleanedData).length > 0 && allPortfolioNames.length > 0 && (
+        <PortfolioDropdown
+          portfolioNames={allPortfolioNames}
+          selectedNames={selectedPortfolioNames}
+          onChange={setSelectedPortfolioNames}
+        />
+      )}
+      {showPortfolio && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <PortfolioSection allMetrics={portfolioFilteredAllMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={portfolioFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
+      {showCorrelation && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <CorrelationSection selectedTradeLists={selectedTradeLists} dailyReturnsMap={dailyReturnsMap} correlationThreshold={correlationThreshold} setCorrelationThreshold={setCorrelationThreshold} correlationMatrix={correlationMatrix} correlationCalculating={correlationCalculating} onExport={exportCorrelationData} allMetrics={portfolioFilteredAllMetrics} />}
+      {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={portfolioFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
       {Object.keys(cleanedData).length > 0 && <SessionComplete />}
     </div>
   );

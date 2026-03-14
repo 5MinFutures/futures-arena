@@ -34,6 +34,7 @@ interface Metrics {
   direction: string;
   intradayStatus: string | null;
   strategyName: string;
+  portfolioHint?: string | null;
   isBenchmark: boolean;
   isFutures: boolean;
   originalFilename: string;
@@ -161,10 +162,11 @@ export const parseFilenameComponents = (filename: string | null): {
   direction: string;
   intradayStatus: string | null;
   strategyName: string;
+  portfolioHint: string | null;
   isBenchmark: boolean;
   isFutures: boolean;
 } => {
-  if (!filename) return { symbol: '', direction: 'Unknown', intradayStatus: null, strategyName: filename || '', isBenchmark: false, isFutures: false };
+  if (!filename) return { symbol: '', direction: 'Unknown', intradayStatus: null, strategyName: filename || '', portfolioHint: null, isBenchmark: false, isFutures: false };
   const baseName = filename.replace('.csv', '');
   const isBenchmark = baseName.toLowerCase().includes('_benchmark');
   let symbol = '';
@@ -194,17 +196,27 @@ export const parseFilenameComponents = (filename: string | null): {
     intradayStatus = 'DTH';
     remaining = remaining.replace(/DTH/gi, '').replace(/^_+|_+$/g, '');
   }
-  let strategyName;
+  let strategyName: string;
+  let portfolioHint: string | null = null;
   if (isBenchmark) {
     strategyName = symbol || 'Unknown';
   } else {
-    strategyName = remaining.replace(/^_+|_+$/g, '').replace(/_+/g, '_') || 'Unknown Strategy';
+    const cleaned = remaining.replace(/^_+|_+$/g, '');
+    const firstUnderscore = cleaned.indexOf('_');
+    if (firstUnderscore >= 0) {
+      portfolioHint = cleaned.slice(0, firstUnderscore) || null;
+      strategyName = cleaned.slice(firstUnderscore + 1) || 'Unknown Strategy';
+    } else {
+      portfolioHint = '--';
+      strategyName = cleaned || 'Unknown Strategy';
+    }
   }
   return {
     symbol: symbol || 'Unknown',
     direction,
     intradayStatus,
     strategyName,
+    portfolioHint,
     isBenchmark,
     isFutures: false
   };
@@ -702,6 +714,7 @@ export const calculateMetricsFromDatabase = (
     direction: strategyMetadata.direction,
     intradayStatus: strategyMetadata.is_intraday ? 'DTH' : null,
     strategyName: strategyMetadata.strategy_name,
+    portfolioHint: strategyMetadata.portfolio_hint ?? '--',
     isBenchmark: strategyMetadata.is_benchmark,
     isFutures: strategyMetadata.market in marginRates,
     originalFilename: filename + '.csv'

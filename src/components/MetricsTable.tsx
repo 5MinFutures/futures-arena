@@ -169,7 +169,8 @@ const MetricsTable = ({
                   </span>
                 </div>
               </th>
-              <SortableHeader column="strategyName" sortConfig={sortConfig} handleSort={handleSort}>Strategy Name</SortableHeader>
+              <SortableHeader column="portfolioHint" sortConfig={sortConfig} handleSort={handleSort}>Portfolio</SortableHeader>
+              <SortableHeader column="strategyName" sortConfig={sortConfig} handleSort={handleSort}>Strategy</SortableHeader>
               <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
                 <div className="flex flex-col gap-1 sm:space-y-1">
                   <span>Contracts</span>
@@ -206,7 +207,8 @@ const MetricsTable = ({
                     className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
                 </td>
-                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900 border-b">{getDisplayName(metrics)}</td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900 border-b">{metrics.portfolioHint}</td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900 border-b">{metrics.strategyName || getDisplayName(metrics)}</td>
                 <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 border-b">
                   <ContractInput
                     filename={metrics.originalFilename}
