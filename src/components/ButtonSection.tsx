@@ -72,6 +72,17 @@ const ButtonSection = ({
     onAccountsLoaded(newIds); // App resets selectedAccountIds to include new/remove old accounts
   };
 
+  const handleDeleteAccount = async (accountId: string) => {
+    if (!session) return;
+    const { error } = await supabase
+      .from('account_mappings')
+      .delete()
+      .match({ user_id: session.user.id, account_id: accountId });
+    if (!error) {
+      handleAccountsChange(accountIds.filter(id => id !== accountId));
+    }
+  };
+
   return (
     <>
       <div className="flex flex-col sm:flex-row items-center sm:items-start justify-end gap-2 sm:gap-3 mb-2 sm:mb-3">
@@ -125,6 +136,7 @@ const ButtonSection = ({
             selectedIds={selectedAccountIds}
             onChange={onSelectedAccountIdsChange}
             onManageClick={() => setShowAccountManager(true)}
+            onDeleteAccount={handleDeleteAccount}
           />
         </div>
       )}
