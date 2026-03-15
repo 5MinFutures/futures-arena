@@ -99,6 +99,9 @@ interface PortfolioSectionProps {
   strategyIdMap: Record<string, string>;
   strategyAccountMap: Record<string, string>;
   onUpdateAlias: (accountId: string, strategyId: string, names: { displayName?: string; portfolioDisplayName?: string }) => void;
+  savedViews: Array<{ id: string; name: string; created_at: string }>;
+  onSaveView: (name: string) => void;
+  onLoadView: (id: string) => void;
 }
 
 const PortfolioSection = ({
@@ -136,9 +139,13 @@ const PortfolioSection = ({
   onDeleteStrategy,
   strategyIdMap,
   strategyAccountMap,
-  onUpdateAlias
+  onUpdateAlias,
+  savedViews,
+  onSaveView,
+  onLoadView,
 }: PortfolioSectionProps) => {
   const [showAdvancedMetrics, setShowAdvancedMetrics] = useState(false);
+  const [viewName, setViewName] = useState('');
   const [riskFreeRate, setRiskFreeRate] = useState<number>(4); // Default 4% annual risk-free rate
 
   // Calculate downside deviation for Sortino Ratio (annualized)
@@ -468,6 +475,35 @@ const PortfolioSection = ({
           </div>
         </div>
       )}
+      {/* Saved Views */}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={viewName}
+          onChange={e => setViewName(e.target.value)}
+          placeholder="View name..."
+          className="border border-gray-300 rounded px-2 py-1 text-sm"
+        />
+        <button
+          onClick={() => { if (viewName.trim()) { onSaveView(viewName.trim()); setViewName(''); } }}
+          disabled={!viewName.trim()}
+          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40"
+        >
+          Save View
+        </button>
+        {savedViews.length > 0 && (
+          <select
+            value=""
+            onChange={e => { if (e.target.value) onLoadView(e.target.value); }}
+            className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700"
+          >
+            <option value="">Load saved view…</option>
+            {savedViews.map(v => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
       {selectedTradeLists.size === 0 && (
         <div className="p-3 sm:p-4 bg-gray-100 border border-gray-200 rounded-lg text-center">
           <p className="text-xs sm:text-sm text-gray-600">Select at least one trading strategy from the metrics table to view portfolio analysis.</p>

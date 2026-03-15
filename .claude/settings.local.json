@@ -11,7 +11,9 @@
       "Bash(wc -l \"c:/Users/kg129/Desktop/5MF/futures-arena/futures-arena/.claude/skills\"/*/*.md)",
       "Bash(wc -l \"c:/Users/kg129/.claude/plans\"/*.md \"c:/Users/kg129/.claude/debug\"/*.txt)",
       "Bash(du -sh \"c:/Users/kg129/.claude\"/*)",
-      "Bash(git checkout -b feat/auth)"
+      "Bash(git checkout -b feat/auth)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   },
   "promptPrefix": "💬 COMMUNICATION STYLE:\nExplain to the user in layman's terms - concise and clear. This only affects explanations, not your technical thinking, reasoning, or code quality.\n\n"
