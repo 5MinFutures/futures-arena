@@ -507,23 +507,25 @@ const App = () => {
         }
       }
 
-      // Fetch trades for each strategy separately to avoid embedded resource limits
-      for (const strategy of typedStrategies) {
-        const { data: trades, error: tradesError } = await supabase
-          .from('trades')
-          .select('trade_date, trade_time, profit, trade_type, notes')
-          .eq('strategy_id', strategy.strategy_id)
-          .order('trade_date', { ascending: true })
-          .order('trade_time', { ascending: true })
-          .limit(10000); // Explicit high limit to get all trades
+      // Fetch trades for all strategies in parallel to avoid N serial round trips
+      await Promise.all(
+        typedStrategies.map(async (strategy) => {
+          const { data: trades, error: tradesError } = await supabase
+            .from('trades')
+            .select('trade_date, trade_time, profit, trade_type, notes')
+            .eq('strategy_id', strategy.strategy_id)
+            .order('trade_date', { ascending: true })
+            .order('trade_time', { ascending: true })
+            .limit(10000); // Explicit high limit to get all trades
 
-        if (tradesError) {
-          throw new Error(`Failed to fetch trades for ${strategy.strategy_id}: ${tradesError.message}`);
-        }
+          if (tradesError) {
+            throw new Error(`Failed to fetch trades for ${strategy.strategy_id}: ${tradesError.message}`);
+          }
 
-        // Attach trades to strategy object
-        strategy.trades = (trades as DatabaseTrade[]) || [];
-      }
+          // Attach trades to strategy object
+          strategy.trades = (trades as DatabaseTrade[]) || [];
+        })
+      );
 
       // Transform database data to cleanedData format
       const newCleanedData: CleanedData = { ...cleanedData };
@@ -599,8 +601,6 @@ const App = () => {
       }
 
       // Update cleanedData state
-      console.log('[maps] strategyIdMap keys', Object.keys(newStrategyIdMap));
-      console.log('[maps] strategyAccountMap keys', Object.keys(newStrategyAccountMap));
       setAliasMap(newAliasMap);
       setCleanedData(newCleanedData);
       setStrategyIdMap(newStrategyIdMap);
