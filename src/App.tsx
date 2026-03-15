@@ -185,6 +185,21 @@ const App = () => {
       .map((id: string) => idToFilename[id])
       .filter((f: string | undefined): f is string => !!f);
 
+    // Derive which portfolios the saved strategies belong to and restore the portfolio filter
+    const portfoliosFromView = new Set<string>();
+    filenames.forEach(filename => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const metrics = (aliasedAllMetrics as any)?.[filename] || (allMetrics as any)?.[filename];
+      if (metrics?.portfolioHint) {
+        portfoliosFromView.add(metrics.portfolioHint);
+      }
+    });
+    if (portfoliosFromView.size > 0) {
+      setSelectedPortfolioNames(new Set(portfoliosFromView));
+    } else if (filenames.length > 0) {
+      console.warn('[loadPortfolioView] no portfolioHint found — portfolio filter unchanged');
+    }
+
     setSelectedTradeLists(new Set(filenames));
     setDateRange({
       start: data.date_start ? String(data.date_start) : null,
