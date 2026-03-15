@@ -110,6 +110,16 @@ const App = () => {
       .map(filename => strategyIdMap[filename])
       .filter((id): id is string => !!id);
 
+    const contractMultipliersToSave: Record<string, number> = {};
+    Array.from(selectedTradeLists)
+      .filter(filename => allowedFilenames.has(filename))
+      .forEach(filename => {
+        const strategyId = strategyIdMap[filename];
+        if (strategyId && contractMultipliers[filename] !== undefined) {
+          contractMultipliersToSave[strategyId] = contractMultipliers[filename];
+        }
+      });
+
     const existing = savedViews.find(v => v.name === trimmedName);
 
     if (existing) {
@@ -120,6 +130,7 @@ const App = () => {
         .from('portfolio_views')
         .update({
           strategy_ids: strategyIds,
+          contract_multipliers: contractMultipliersToSave,
           date_start: dateRange.start ?? null,
           date_end: dateRange.end ?? null,
           updated_at: new Date().toISOString(),
@@ -136,6 +147,7 @@ const App = () => {
         user_id: user.id,
         name: trimmedName,
         strategy_ids: strategyIds,
+        contract_multipliers: contractMultipliersToSave,
         date_start: dateRange.start ?? null,
         date_end: dateRange.end ?? null,
       });
@@ -205,6 +217,15 @@ const App = () => {
       start: data.date_start ? String(data.date_start) : null,
       end: data.date_end ? String(data.date_end) : null,
     });
+
+    if (data.contract_multipliers && Object.keys(data.contract_multipliers).length > 0) {
+      filenames.forEach((filename: string) => {
+        const strategyId = strategyIdMap[filename];
+        if (strategyId && data.contract_multipliers[strategyId] !== undefined) {
+          handleContractChange(filename, data.contract_multipliers[strategyId]);
+        }
+      });
+    }
   };
 
   // Derived view of cleanedData filtered by selectedAccountIds.
