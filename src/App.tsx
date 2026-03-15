@@ -75,6 +75,9 @@ const App = () => {
   const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
   // Display-only portfolio filter: which portfolios to show (client-side, no Supabase calls)
   const [selectedPortfolioNames, setSelectedPortfolioNames] = useState<Set<string>>(new Set());
+  // Per-user display name overrides for DB-backed strategies (keyed by `${account_id}::${strategy_id}`)
+  type AliasMap = Record<string, { displayName: string | null; portfolioDisplayName: string | null }>;
+  const [aliasMap, setAliasMap] = useState<AliasMap>({});
 
   // Derived view of cleanedData filtered by selectedAccountIds.
   // CSV uploads (no entry in strategyAccountMap) always pass through.
@@ -94,14 +97,35 @@ const App = () => {
   const { sortConfig, sortPriorities, showAdvancedSort, setShowAdvancedSort, handleSort, addSortPriority, removeSortPriority, updateSortPriority, clearSorting, applyAdvancedSort } = useSorting();
   const { allMetrics, sortedAndFilteredMetrics } = useMetrics(displayCleanedData, contractMultipliers, sortConfig, sortPriorities);
 
+  // Apply per-user display name aliases on top of computed metrics (DB strategies only)
+  const aliasedAllMetrics = useMemo(() => {
+    if (!allMetrics || Object.keys(aliasMap).length === 0) return allMetrics;
+    const result = { ...allMetrics };
+    for (const [filename, metrics] of Object.entries(result)) {
+      const accountId = strategyAccountMap[filename];
+      const strategyId = strategyIdMap[filename];
+      if (accountId && strategyId) {
+        const alias = aliasMap[`${accountId}::${strategyId}`];
+        if (alias) {
+          result[filename] = {
+            ...(metrics as any),
+            strategyName: alias.displayName || (metrics as any).strategyName,
+            portfolioHint: alias.portfolioDisplayName || (metrics as any).portfolioHint,
+          };
+        }
+      }
+    }
+    return result;
+  }, [allMetrics, aliasMap, strategyAccountMap, strategyIdMap]);
+
   // Distinct sorted portfolio names from loaded metrics
   const allPortfolioNames = useMemo(() =>
     [...new Set(
-      Object.values(allMetrics || {})
+      Object.values(aliasedAllMetrics || {})
         .map((m: any) => m.portfolioHint || '--')
         .filter(Boolean)
     )].sort(),
-    [allMetrics]
+    [aliasedAllMetrics]
   );
 
   // Auto-select all portfolios on first load only. Ref sentinel ensures this runs once
@@ -114,25 +138,42 @@ const App = () => {
     }
   }, [allPortfolioNames.join(',')]);
 
+  // Alias overlay for the sorted array (feeds MetricsTable display)
+  const aliasedSortedMetrics = useMemo(() => {
+    if (Object.keys(aliasMap).length === 0) return sortedAndFilteredMetrics;
+    return sortedAndFilteredMetrics.map((metrics: any) => {
+      const accountId = strategyAccountMap[metrics.originalFilename];
+      const strategyId = strategyIdMap[metrics.originalFilename];
+      if (!accountId || !strategyId) return metrics;
+      const alias = aliasMap[`${accountId}::${strategyId}`];
+      if (!alias) return metrics;
+      return {
+        ...metrics,
+        strategyName: alias.displayName || metrics.strategyName,
+        portfolioHint: alias.portfolioDisplayName || metrics.portfolioHint,
+      };
+    });
+  }, [sortedAndFilteredMetrics, aliasMap, strategyAccountMap, strategyIdMap]);
+
   const portfolioFilteredMetrics = useMemo(() => {
-    if (allPortfolioNames.length === 0) return sortedAndFilteredMetrics;
+    if (allPortfolioNames.length === 0) return aliasedSortedMetrics;
     if (selectedPortfolioNames.size === 0) return [];
-    if (selectedPortfolioNames.size === allPortfolioNames.length) return sortedAndFilteredMetrics;
-    return sortedAndFilteredMetrics.filter((m: any) =>
+    if (selectedPortfolioNames.size === allPortfolioNames.length) return aliasedSortedMetrics;
+    return aliasedSortedMetrics.filter((m: any) =>
       selectedPortfolioNames.has(m.portfolioHint || '--')
     );
-  }, [sortedAndFilteredMetrics, selectedPortfolioNames, allPortfolioNames.length]);
+  }, [aliasedSortedMetrics, selectedPortfolioNames, allPortfolioNames.length]);
 
   const portfolioFilteredAllMetrics = useMemo(() => {
-    if (allPortfolioNames.length === 0) return allMetrics;
+    if (allPortfolioNames.length === 0) return aliasedAllMetrics;
     if (selectedPortfolioNames.size === 0) return {};
-    if (selectedPortfolioNames.size === allPortfolioNames.length) return allMetrics;
+    if (selectedPortfolioNames.size === allPortfolioNames.length) return aliasedAllMetrics;
     return Object.fromEntries(
-      Object.entries(allMetrics || {}).filter(([, m]: [string, any]) =>
+      Object.entries(aliasedAllMetrics || {}).filter(([, m]: [string, any]) =>
         selectedPortfolioNames.has((m as any).portfolioHint || '--')
       )
     );
-  }, [allMetrics, selectedPortfolioNames, allPortfolioNames.length]);
+  }, [aliasedAllMetrics, selectedPortfolioNames, allPortfolioNames.length]);
 
   // Wrapper function to apply master contract value to only visible (filtered) rows
   const applyMasterToFiltered = useCallback((value: number) => {
@@ -319,6 +360,25 @@ const App = () => {
       // Type assertion for strategies with trades property
       const typedStrategies = strategies as StrategyFromDB[];
 
+      // Fetch display name aliases for the current user
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const newAliasMap: AliasMap = {};
+      if (currentUser && linkedAccountIds.length > 0) {
+        const { data: aliases } = await supabase
+          .from('strategy_aliases')
+          .select('account_id, strategy_id, display_name, portfolio_display_name')
+          .eq('user_id', currentUser.id)
+          .in('account_id', linkedAccountIds);
+        if (aliases) {
+          for (const a of aliases) {
+            newAliasMap[`${a.account_id}::${a.strategy_id}`] = {
+              displayName: a.display_name,
+              portfolioDisplayName: a.portfolio_display_name,
+            };
+          }
+        }
+      }
+
       // Fetch trades for each strategy separately to avoid embedded resource limits
       for (const strategy of typedStrategies) {
         const { data: trades, error: tradesError } = await supabase
@@ -411,6 +471,9 @@ const App = () => {
       }
 
       // Update cleanedData state
+      console.log('[maps] strategyIdMap keys', Object.keys(newStrategyIdMap));
+      console.log('[maps] strategyAccountMap keys', Object.keys(newStrategyAccountMap));
+      setAliasMap(newAliasMap);
       setCleanedData(newCleanedData);
       setStrategyIdMap(newStrategyIdMap);
       setStrategyAccountMap(newStrategyAccountMap);
@@ -512,6 +575,57 @@ const App = () => {
     }
   };
 
+  const onUpdateAlias = async (
+    accountId: string,
+    strategyId: string,
+    names: { displayName?: string; portfolioDisplayName?: string }
+  ) => {
+    console.log('[onUpdateAlias] called', { accountId, strategyId, names });
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) { console.warn('[onUpdateAlias] no authenticated user'); return; }
+
+    const key = `${accountId}::${strategyId}`;
+    const existing = aliasMap[key];
+
+    // undefined = "don't change field"; empty string = "clear override"
+    const newDisplayName = names.displayName !== undefined
+      ? (names.displayName || null)
+      : (existing?.displayName ?? null);
+    const newPortfolioDisplayName = names.portfolioDisplayName !== undefined
+      ? (names.portfolioDisplayName || null)
+      : (existing?.portfolioDisplayName ?? null);
+
+    if (!newDisplayName && !newPortfolioDisplayName) {
+      // Both empty — delete the alias row
+      const { error: delError } = await supabase.from('strategy_aliases').delete()
+        .eq('user_id', currentUser.id)
+        .eq('account_id', accountId)
+        .eq('strategy_id', strategyId);
+      if (delError) console.error('[onUpdateAlias] delete error', delError);
+      setAliasMap(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } else {
+      const { error: upsertError } = await supabase.from('strategy_aliases').upsert(
+        {
+          user_id: currentUser.id,
+          account_id: accountId,
+          strategy_id: strategyId,
+          display_name: newDisplayName,
+          portfolio_display_name: newPortfolioDisplayName,
+        },
+        { onConflict: 'user_id,account_id,strategy_id' }
+      );
+      if (upsertError) console.error('[onUpdateAlias] upsert error', upsertError);
+      setAliasMap(prev => ({
+        ...prev,
+        [key]: { displayName: newDisplayName, portfolioDisplayName: newPortfolioDisplayName },
+      }));
+    }
+  };
+
   return (
     <div className="container mx-auto p-2 sm:p-4 max-w-7xl">
       <ButtonSection
@@ -541,9 +655,9 @@ const App = () => {
           onChange={setSelectedPortfolioNames}
         />
       )}
-      {showPortfolio && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <PortfolioSection allMetrics={portfolioFilteredAllMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={portfolioFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
+      {showPortfolio && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <PortfolioSection allMetrics={portfolioFilteredAllMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={portfolioFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} strategyAccountMap={strategyAccountMap} onUpdateAlias={onUpdateAlias} />}
       {showCorrelation && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <CorrelationSection selectedTradeLists={selectedTradeLists} dailyReturnsMap={dailyReturnsMap} correlationThreshold={correlationThreshold} setCorrelationThreshold={setCorrelationThreshold} correlationMatrix={correlationMatrix} correlationCalculating={correlationCalculating} onExport={exportCorrelationData} allMetrics={portfolioFilteredAllMetrics} />}
-      {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={portfolioFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
+      {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={portfolioFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} strategyAccountMap={strategyAccountMap} onUpdateAlias={onUpdateAlias} />}
       {Object.keys(cleanedData).length > 0 && <SessionComplete />}
     </div>
   );
