@@ -187,7 +187,7 @@ const App = () => {
 
     // Derive which portfolios the saved strategies belong to and restore the portfolio filter
     const portfoliosFromView = new Set<string>();
-    filenames.forEach(filename => {
+    filenames.forEach((filename: string) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const metrics = (aliasedAllMetrics as any)?.[filename] || (allMetrics as any)?.[filename];
       if (metrics?.portfolioHint) {
