@@ -132,43 +132,40 @@ const SaveViewRow = ({ savedViews, onSaveView, onLoadView, onDeleteView }: SaveV
       >
         Save View
       </button>
-      {savedViews.length > 0 && (
-        <>
-          <select
-            value={selectedViewId}
-            onChange={e => {
-              const id = e.target.value;
-              setSelectedViewId(id);
-              if (id) {
-                onLoadView(id);
-                const view = savedViews.find(v => v.id === id);
-                if (view) setViewName(view.name);
-              }
-            }}
-            className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700"
-          >
-            <option value="">Load saved view…</option>
-            {savedViews.map(v => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => {
-              if (selectedViewId) {
-                onDeleteView(selectedViewId);
-                setSelectedViewId('');
-                setViewName('');
-              }
-            }}
-            disabled={!selectedViewId}
-            className="px-2 py-1 text-sm text-red-600 disabled:opacity-40"
-            title="Delete selected view"
-          >
-            🗑
-          </button>
-        </>
-      )}
+      <select
+        value={selectedViewId}
+        onChange={e => {
+          const id = e.target.value;
+          setSelectedViewId(id);
+          if (id) {
+            onLoadView(id);
+            const view = savedViews.find(v => v.id === id);
+            if (view) setViewName(view.name);
+          }
+        }}
+        disabled={savedViews.length === 0}
+        className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700"
+      >
+        <option value="">Load saved view…</option>
+        {savedViews.map(v => (
+          <option key={v.id} value={v.id}>{v.name}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          if (selectedViewId) {
+            onDeleteView(selectedViewId);
+            setSelectedViewId('');
+            setViewName('');
+          }
+        }}
+        disabled={!selectedViewId}
+        className="px-2 py-1 text-sm text-red-600 disabled:opacity-40"
+        title="Delete selected view"
+      >
+        🗑
+      </button>
     </div>
   );
 };
