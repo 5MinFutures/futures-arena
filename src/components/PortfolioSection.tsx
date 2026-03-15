@@ -102,6 +102,7 @@ interface PortfolioSectionProps {
   savedViews: Array<{ id: string; name: string; created_at: string }>;
   onSaveView: (name: string) => void;
   onLoadView: (id: string) => void;
+  onDeleteView: (id: string) => void;
 }
 
 const PortfolioSection = ({
@@ -143,9 +144,11 @@ const PortfolioSection = ({
   savedViews,
   onSaveView,
   onLoadView,
+  onDeleteView,
 }: PortfolioSectionProps) => {
   const [showAdvancedMetrics, setShowAdvancedMetrics] = useState(false);
   const [viewName, setViewName] = useState('');
+  const [selectedViewId, setSelectedViewId] = useState<string>('');
   const [riskFreeRate, setRiskFreeRate] = useState<number>(4); // Default 4% annual risk-free rate
 
   // Calculate downside deviation for Sortino Ratio (annualized)
@@ -492,16 +495,41 @@ const PortfolioSection = ({
           Save View
         </button>
         {savedViews.length > 0 && (
-          <select
-            value=""
-            onChange={e => { if (e.target.value) onLoadView(e.target.value); }}
-            className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700"
-          >
-            <option value="">Load saved view…</option>
-            {savedViews.map(v => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
+          <>
+            <select
+              value={selectedViewId}
+              onChange={e => {
+                const id = e.target.value;
+                setSelectedViewId(id);
+                if (id) {
+                  onLoadView(id);
+                  const view = savedViews.find(v => v.id === id);
+                  if (view) setViewName(view.name);
+                }
+              }}
+              className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700"
+            >
+              <option value="">Load saved view…</option>
+              {savedViews.map(v => (
+                <option key={v.id} value={v.id}>{v.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedViewId) {
+                  onDeleteView(selectedViewId);
+                  setSelectedViewId('');
+                  setViewName('');
+                }
+              }}
+              disabled={!selectedViewId}
+              className="px-2 py-1 text-sm text-red-600 disabled:opacity-40"
+              title="Delete selected view"
+            >
+              🗑
+            </button>
+          </>
         )}
       </div>
       {selectedTradeLists.size === 0 && (

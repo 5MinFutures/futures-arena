@@ -97,26 +97,72 @@ const App = () => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const savePortfolioView = async (name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
+    // Only save strategies that are both checked AND visible through the portfolio filter
+    const allowedFilenames = new Set(Object.keys(portfolioFilteredAllMetrics || {}));
     const strategyIds = Array.from(selectedTradeLists)
+      .filter(filename => allowedFilenames.has(filename))
       .map(filename => strategyIdMap[filename])
       .filter((id): id is string => !!id);
 
-    const { error } = await supabase.from('portfolio_views').insert({
-      user_id: user.id,
-      name,
-      strategy_ids: strategyIds,
-      date_start: dateRange.start ?? null,
-      date_end: dateRange.end ?? null,
-    });
+    const existing = savedViews.find(v => v.name === trimmedName);
 
-    if (!error) {
-      await refreshSavedViews();
+    if (existing) {
+      const overwrite = window.confirm(`A view named "${trimmedName}" already exists. Overwrite it?`);
+      if (!overwrite) return;
+
+      const { error } = await supabase
+        .from('portfolio_views')
+        .update({
+          strategy_ids: strategyIds,
+          date_start: dateRange.start ?? null,
+          date_end: dateRange.end ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('[savePortfolioView] update error', error);
+        return;
+      }
     } else {
-      console.error('[savePortfolioView] error', error);
+      const { error } = await supabase.from('portfolio_views').insert({
+        user_id: user.id,
+        name: trimmedName,
+        strategy_ids: strategyIds,
+        date_start: dateRange.start ?? null,
+        date_end: dateRange.end ?? null,
+      });
+      if (error) {
+        console.error('[savePortfolioView] insert error', error);
+        return;
+      }
     }
+
+    await refreshSavedViews();
+  };
+
+  const deletePortfolioView = async (id: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const confirmed = window.confirm('Delete this view? This cannot be undone.');
+    if (!confirmed) return;
+    const { error } = await supabase
+      .from('portfolio_views')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+    if (error) {
+      console.error('[deletePortfolioView] error', error);
+      return;
+    }
+    await refreshSavedViews();
   };
 
   const loadPortfolioView = async (viewId: string) => {
@@ -722,7 +768,7 @@ const App = () => {
           onChange={setSelectedPortfolioNames}
         />
       )}
-      {showPortfolio && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <PortfolioSection allMetrics={portfolioFilteredAllMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={portfolioFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} strategyAccountMap={strategyAccountMap} onUpdateAlias={onUpdateAlias} savedViews={savedViews} onSaveView={savePortfolioView} onLoadView={loadPortfolioView} />}
+      {showPortfolio && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <PortfolioSection allMetrics={portfolioFilteredAllMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={portfolioFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} strategyAccountMap={strategyAccountMap} onUpdateAlias={onUpdateAlias} savedViews={savedViews} onSaveView={savePortfolioView} onLoadView={loadPortfolioView} onDeleteView={deletePortfolioView} />}
       {showCorrelation && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <CorrelationSection selectedTradeLists={selectedTradeLists} dailyReturnsMap={dailyReturnsMap} correlationThreshold={correlationThreshold} setCorrelationThreshold={setCorrelationThreshold} correlationMatrix={correlationMatrix} correlationCalculating={correlationCalculating} onExport={exportCorrelationData} allMetrics={portfolioFilteredAllMetrics} />}
       {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={portfolioFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} strategyAccountMap={strategyAccountMap} onUpdateAlias={onUpdateAlias} />}
       {Object.keys(cleanedData).length > 0 && <SessionComplete />}
