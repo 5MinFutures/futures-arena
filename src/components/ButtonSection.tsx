@@ -98,7 +98,7 @@ const ButtonSection = ({
 
         {/* skool.com/futures Button */}
         <a
-          href="https://www.skool.com/futures"
+          href="https://www.skool.com/boss-trading-7633"
           target="_blank"
           rel="noopener noreferrer"
           className="flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2 min-h-[44px] bg-black text-[#84cc16] font-bold rounded-md hover:bg-gray-900 transition-colors"
