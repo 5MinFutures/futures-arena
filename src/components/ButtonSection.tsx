@@ -105,7 +105,7 @@ const ButtonSection = ({
           aria-label="Join our Skool community"
         >
           <img src={skoolLogo} alt="Skool" className="h-5 w-5" />
-          <span>skool.com/futures</span>
+          <span>Free Skool</span>
         </a>
 
         {/* Log In / Sign Out Button */}
