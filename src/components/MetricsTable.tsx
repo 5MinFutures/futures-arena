@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react';
 import { TrendingUp, Settings, Plus, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import MasterContractControl from './MasterContractControl';
 import SortableHeader from './SortableHeader.tsx';
@@ -27,6 +28,8 @@ interface MetricsTableProps {
   applyAdvancedSort: () => void;
   onDeleteStrategy: (filename: string) => void;
   strategyIdMap: Record<string, string>;
+  strategyAccountMap: Record<string, string>;
+  onUpdateAlias: (accountId: string, strategyId: string, names: { displayName?: string; portfolioDisplayName?: string }) => void;
 }
 
 const MetricsTable = ({
@@ -49,8 +52,47 @@ const MetricsTable = ({
   clearSorting,
   applyAdvancedSort,
   onDeleteStrategy,
-  strategyIdMap
+  strategyIdMap,
+  strategyAccountMap,
+  onUpdateAlias
 }: MetricsTableProps) => {
+  const [editingCell, setEditingCell] = useState<{
+    filename: string;
+    field: 'portfolio' | 'strategy';
+  } | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const committingRef = useRef(false);
+
+  const startEdit = (filename: string, field: 'portfolio' | 'strategy', currentValue: string) => {
+    setEditingCell({ filename, field });
+    setEditValue(currentValue || '');
+  };
+
+  const commitEdit = (metrics: any) => {
+    if (!editingCell || committingRef.current) return;
+    committingRef.current = true;
+    console.log('[commitEdit] originalFilename', metrics.originalFilename);
+    console.log('[commitEdit] accountId', strategyAccountMap[metrics.originalFilename]);
+    console.log('[commitEdit] strategyId', strategyIdMap[metrics.originalFilename]);
+    const accountId = strategyAccountMap[metrics.originalFilename];
+    const strategyId = strategyIdMap[metrics.originalFilename];
+    if (!accountId || !strategyId) {
+      setEditingCell(null);
+      committingRef.current = false;
+      return;
+    }
+    console.log('[commitEdit] calling onUpdateAlias', { accountId, strategyId, field: editingCell.field, value: editValue });
+    if (editingCell.field === 'portfolio') {
+      onUpdateAlias(accountId, strategyId, { portfolioDisplayName: editValue });
+    } else {
+      onUpdateAlias(accountId, strategyId, { displayName: editValue });
+    }
+    setEditingCell(null);
+    setTimeout(() => { committingRef.current = false; }, 0);
+  };
+
+  const cancelEdit = () => setEditingCell(null);
+
   return (
     <div className="mb-4 sm:mb-6">
       <div className="bg-green-50 border border-green-200 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
@@ -169,7 +211,8 @@ const MetricsTable = ({
                   </span>
                 </div>
               </th>
-              <SortableHeader column="strategyName" sortConfig={sortConfig} handleSort={handleSort}>Strategy Name</SortableHeader>
+              <SortableHeader column="portfolioHint" sortConfig={sortConfig} handleSort={handleSort}>Portfolio</SortableHeader>
+              <SortableHeader column="strategyName" sortConfig={sortConfig} handleSort={handleSort}>Strategy</SortableHeader>
               <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b">
                 <div className="flex flex-col gap-1 sm:space-y-1">
                   <span>Contracts</span>
@@ -206,7 +249,60 @@ const MetricsTable = ({
                     className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
                 </td>
-                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900 border-b">{getDisplayName(metrics)}</td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900 border-b">
+                  {(() => {
+                    const isDb = !!strategyIdMap[metrics.originalFilename];
+                    const isEditing = editingCell?.filename === metrics.originalFilename && editingCell?.field === 'portfolio';
+                    if (isDb && isEditing) {
+                      return (
+                        <input
+                          autoFocus
+                          className="w-full text-xs border border-blue-400 rounded px-1 py-0.5 focus:outline-none"
+                          value={editValue}
+                          onChange={e => setEditValue(e.target.value)}
+                          onBlur={() => commitEdit(metrics)}
+                          onKeyDown={e => { if (e.key === 'Enter') commitEdit(metrics); if (e.key === 'Escape') cancelEdit(); }}
+                        />
+                      );
+                    }
+                    return (
+                      <span
+                        className={isDb ? 'cursor-pointer hover:text-blue-600 hover:underline' : undefined}
+                        title={isDb ? 'Click to rename' : undefined}
+                        onClick={isDb ? () => startEdit(metrics.originalFilename, 'portfolio', metrics.portfolioHint || '') : undefined}
+                      >
+                        {metrics.portfolioHint || '—'}
+                      </span>
+                    );
+                  })()}
+                </td>
+                <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900 border-b">
+                  {(() => {
+                    const isDb = !!strategyIdMap[metrics.originalFilename];
+                    const isEditing = editingCell?.filename === metrics.originalFilename && editingCell?.field === 'strategy';
+                    if (isDb && isEditing) {
+                      return (
+                        <input
+                          autoFocus
+                          className="w-full text-xs border border-blue-400 rounded px-1 py-0.5 focus:outline-none"
+                          value={editValue}
+                          onChange={e => setEditValue(e.target.value)}
+                          onBlur={() => commitEdit(metrics)}
+                          onKeyDown={e => { if (e.key === 'Enter') commitEdit(metrics); if (e.key === 'Escape') cancelEdit(); }}
+                        />
+                      );
+                    }
+                    return (
+                      <span
+                        className={isDb ? 'cursor-pointer hover:text-blue-600 hover:underline' : undefined}
+                        title={isDb ? 'Click to rename' : undefined}
+                        onClick={isDb ? () => startEdit(metrics.originalFilename, 'strategy', metrics.strategyName || getDisplayName(metrics)) : undefined}
+                      >
+                        {metrics.strategyName || getDisplayName(metrics)}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700 border-b">
                   <ContractInput
                     filename={metrics.originalFilename}

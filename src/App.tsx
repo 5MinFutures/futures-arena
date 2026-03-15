@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import ButtonSection from './components/ButtonSection.tsx';
 import Header from './components/Header.tsx';
@@ -6,6 +6,7 @@ import UploadSection from './components/UploadSection.tsx';
 import ErrorList from './components/ErrorList.tsx';
 import UploadedFilesList from './components/UploadedFilesList.tsx';
 import AnalyticsControls from './components/AnalyticsControls.tsx';
+import PortfolioDropdown from './components/PortfolioDropdown.tsx';
 import PortfolioSection from './components/PortfolioSection.tsx';
 import CorrelationSection from './components/CorrelationSection.tsx';
 import MetricsTable from './components/MetricsTable.tsx';
@@ -35,6 +36,7 @@ interface DatabaseTrade {
 
 interface StrategyFromDB {
   strategy_id: string;
+  account_id?: string | null; // used to build strategyAccountMap for display filtering
   market: string;
   direction: string;
   strategy_name: string;
@@ -53,8 +55,8 @@ const App = () => {
   const [processing, setProcessing] = useState<boolean>(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [showMetrics, setShowMetrics] = useState<boolean>(false);
-  const [showPortfolio, setShowPortfolio] = useState<boolean>(false);
-  const [showCorrelation, setShowCorrelation] = useState<boolean>(false);
+  const [showPortfolio, setShowPortfolio] = useState<boolean>(true);
+  const [showCorrelation, setShowCorrelation] = useState<boolean>(true);
   const [selectedTradeLists, setSelectedTradeLists] = useState<Set<string>>(new Set<string>());
   const [dateRange, setDateRange] = useState<{ start: string | null; end: string | null }>({ start: null, end: null });
   const [chartType, setChartType] = useState<string>('equity');
@@ -65,17 +67,248 @@ const App = () => {
   const [correlationMatrix, setCorrelationMatrix] = useState<{ matrix: number[][]; strategies: string[]; size: number } | null>(null);
   const [correlationCalculating, setCorrelationCalculating] = useState<boolean>(false);
   const [strategyIdMap, setStrategyIdMap] = useState<Record<string, string>>({});
+  // Maps filename → account_id; used to derive displayCleanedData without touching Supabase
+  const [strategyAccountMap, setStrategyAccountMap] = useState<Record<string, string>>({});
+  // Full list of accounts linked to the logged-in user (source of truth for fetching)
+  const [linkedAccountIds, setLinkedAccountIds] = useState<string[]>([]);
+  // Display-only filter: which accounts' strategies to show (never drives Supabase queries)
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Set<string>>(new Set());
+  // Display-only portfolio filter: which portfolios to show (client-side, no Supabase calls)
+  const [selectedPortfolioNames, setSelectedPortfolioNames] = useState<Set<string>>(new Set());
+  // Per-user display name overrides for DB-backed strategies (keyed by `${account_id}::${strategy_id}`)
+  type AliasMap = Record<string, { displayName: string | null; portfolioDisplayName: string | null }>;
+  const [aliasMap, setAliasMap] = useState<AliasMap>({});
+  const [savedViews, setSavedViews] = useState<Array<{ id: string; name: string; created_at: string }>>([]);
+
+  const refreshSavedViews = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('portfolio_views')
+      .select('id, name, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (error) console.error('[refreshSavedViews] error', error);
+    if (data) setSavedViews(data);
+  };
+
+  useEffect(() => {
+    refreshSavedViews();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const savePortfolioView = async (name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Only save strategies that are both checked AND visible through the portfolio filter
+    const allowedFilenames = new Set(Object.keys(portfolioFilteredAllMetrics || {}));
+    const strategyIds = Array.from(selectedTradeLists)
+      .filter(filename => allowedFilenames.has(filename))
+      .map(filename => strategyIdMap[filename])
+      .filter((id): id is string => !!id);
+
+    const existing = savedViews.find(v => v.name === trimmedName);
+
+    if (existing) {
+      const overwrite = window.confirm(`A view named "${trimmedName}" already exists. Overwrite it?`);
+      if (!overwrite) return;
+
+      const { error } = await supabase
+        .from('portfolio_views')
+        .update({
+          strategy_ids: strategyIds,
+          date_start: dateRange.start ?? null,
+          date_end: dateRange.end ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('[savePortfolioView] update error', error);
+        return;
+      }
+    } else {
+      const { error } = await supabase.from('portfolio_views').insert({
+        user_id: user.id,
+        name: trimmedName,
+        strategy_ids: strategyIds,
+        date_start: dateRange.start ?? null,
+        date_end: dateRange.end ?? null,
+      });
+      if (error) {
+        console.error('[savePortfolioView] insert error', error);
+        return;
+      }
+    }
+
+    await refreshSavedViews();
+  };
+
+  const deletePortfolioView = async (id: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const confirmed = window.confirm('Delete this view? This cannot be undone.');
+    if (!confirmed) return;
+    const { error } = await supabase
+      .from('portfolio_views')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+    if (error) {
+      console.error('[deletePortfolioView] error', error);
+      return;
+    }
+    await refreshSavedViews();
+  };
+
+  const loadPortfolioView = async (viewId: string) => {
+    const { data, error } = await supabase
+      .from('portfolio_views')
+      .select('*')
+      .eq('id', viewId)
+      .single();
+
+    if (error || !data) {
+      console.error('[loadPortfolioView] error', error);
+      return;
+    }
+
+    const idToFilename = Object.fromEntries(
+      Object.entries(strategyIdMap).map(([filename, id]) => [id, filename])
+    );
+
+    const filenames = (data.strategy_ids || [])
+      .map((id: string) => idToFilename[id])
+      .filter((f: string | undefined): f is string => !!f);
+
+    // Derive which portfolios the saved strategies belong to and restore the portfolio filter
+    const portfoliosFromView = new Set<string>();
+    filenames.forEach((filename: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const metrics = (aliasedAllMetrics as any)?.[filename] || (allMetrics as any)?.[filename];
+      if (metrics?.portfolioHint) {
+        portfoliosFromView.add(metrics.portfolioHint);
+      }
+    });
+    if (portfoliosFromView.size > 0) {
+      setSelectedPortfolioNames(new Set(portfoliosFromView));
+    } else if (filenames.length > 0) {
+      console.warn('[loadPortfolioView] no portfolioHint found — portfolio filter unchanged');
+    }
+
+    setSelectedTradeLists(new Set(filenames));
+    setDateRange({
+      start: data.date_start ? String(data.date_start) : null,
+      end: data.date_end ? String(data.date_end) : null,
+    });
+  };
+
+  // Derived view of cleanedData filtered by selectedAccountIds.
+  // CSV uploads (no entry in strategyAccountMap) always pass through.
+  // Guards that check "do we have any data?" still use cleanedData directly.
+  const displayCleanedData = useMemo(() => {
+    const result: CleanedData = {};
+    Object.keys(cleanedData).forEach(filename => {
+      const acctId = strategyAccountMap[filename];
+      if (!acctId || selectedAccountIds.has(acctId)) {
+        result[filename] = cleanedData[filename];
+      }
+    });
+    return result;
+  }, [cleanedData, strategyAccountMap, selectedAccountIds]);
 
   const { contractMultipliers, masterContractValue, setMasterContractValue, handleContractChange, applyMasterToAll } = useContractMultipliers();
   const { sortConfig, sortPriorities, showAdvancedSort, setShowAdvancedSort, handleSort, addSortPriority, removeSortPriority, updateSortPriority, clearSorting, applyAdvancedSort } = useSorting();
-  const { allMetrics, sortedAndFilteredMetrics } = useMetrics(cleanedData, contractMultipliers, sortConfig, sortPriorities);
+  const { allMetrics, sortedAndFilteredMetrics } = useMetrics(displayCleanedData, contractMultipliers, sortConfig, sortPriorities);
+
+  // Apply per-user display name aliases on top of computed metrics (DB strategies only)
+  const aliasedAllMetrics = useMemo(() => {
+    if (!allMetrics || Object.keys(aliasMap).length === 0) return allMetrics;
+    const result = { ...allMetrics };
+    for (const [filename, metrics] of Object.entries(result)) {
+      const accountId = strategyAccountMap[filename];
+      const strategyId = strategyIdMap[filename];
+      if (accountId && strategyId) {
+        const alias = aliasMap[`${accountId}::${strategyId}`];
+        if (alias) {
+          result[filename] = {
+            ...(metrics as any),
+            strategyName: alias.displayName || (metrics as any).strategyName,
+            portfolioHint: alias.portfolioDisplayName || (metrics as any).portfolioHint,
+          };
+        }
+      }
+    }
+    return result;
+  }, [allMetrics, aliasMap, strategyAccountMap, strategyIdMap]);
+
+  // Distinct sorted portfolio names from loaded metrics
+  const allPortfolioNames = useMemo(() =>
+    [...new Set(
+      Object.values(aliasedAllMetrics || {})
+        .map((m: any) => m.portfolioHint || '--')
+        .filter(Boolean)
+    )].sort(),
+    [aliasedAllMetrics]
+  );
+
+  // Auto-select all portfolios on first load only. Ref sentinel ensures this runs once
+  // per data-load, not on every checkbox toggle (avoids firing when selectedPortfolioNames.size changes).
+  const portfolioInitialized = useRef(false);
+  useEffect(() => {
+    if (!portfolioInitialized.current && allPortfolioNames.length > 0) {
+      portfolioInitialized.current = true;
+      setSelectedPortfolioNames(new Set(allPortfolioNames));
+    }
+  }, [allPortfolioNames.join(',')]);
+
+  // Alias overlay for the sorted array (feeds MetricsTable display)
+  const aliasedSortedMetrics = useMemo(() => {
+    if (Object.keys(aliasMap).length === 0) return sortedAndFilteredMetrics;
+    return sortedAndFilteredMetrics.map((metrics: any) => {
+      const accountId = strategyAccountMap[metrics.originalFilename];
+      const strategyId = strategyIdMap[metrics.originalFilename];
+      if (!accountId || !strategyId) return metrics;
+      const alias = aliasMap[`${accountId}::${strategyId}`];
+      if (!alias) return metrics;
+      return {
+        ...metrics,
+        strategyName: alias.displayName || metrics.strategyName,
+        portfolioHint: alias.portfolioDisplayName || metrics.portfolioHint,
+      };
+    });
+  }, [sortedAndFilteredMetrics, aliasMap, strategyAccountMap, strategyIdMap]);
+
+  const portfolioFilteredMetrics = useMemo(() => {
+    if (allPortfolioNames.length === 0) return aliasedSortedMetrics;
+    if (selectedPortfolioNames.size === 0) return [];
+    if (selectedPortfolioNames.size === allPortfolioNames.length) return aliasedSortedMetrics;
+    return aliasedSortedMetrics.filter((m: any) =>
+      selectedPortfolioNames.has(m.portfolioHint || '--')
+    );
+  }, [aliasedSortedMetrics, selectedPortfolioNames, allPortfolioNames.length]);
+
+  const portfolioFilteredAllMetrics = useMemo(() => {
+    if (allPortfolioNames.length === 0) return aliasedAllMetrics;
+    if (selectedPortfolioNames.size === 0) return {};
+    if (selectedPortfolioNames.size === allPortfolioNames.length) return aliasedAllMetrics;
+    return Object.fromEntries(
+      Object.entries(aliasedAllMetrics || {}).filter(([, m]: [string, any]) =>
+        selectedPortfolioNames.has((m as any).portfolioHint || '--')
+      )
+    );
+  }, [aliasedAllMetrics, selectedPortfolioNames, allPortfolioNames.length]);
 
   // Wrapper function to apply master contract value to only visible (filtered) rows
   const applyMasterToFiltered = useCallback((value: number) => {
-    const visibleKeys = sortedAndFilteredMetrics.map(m => m.originalFilename);
+    const visibleKeys = portfolioFilteredMetrics.map((m: any) => m.originalFilename);
     applyMasterToAll(value, visibleKeys);
-  }, [sortedAndFilteredMetrics, applyMasterToAll]);
-  const { portfolioData, individualChartsData, dailyReturnsMap } = usePortfolio(allMetrics || {}, selectedTradeLists, dateRange, normalizeEquity, startingCapital, contractMultipliers);
+  }, [portfolioFilteredMetrics, applyMasterToAll]);
+  const { portfolioData, individualChartsData, dailyReturnsMap } = usePortfolio(portfolioFilteredAllMetrics || {}, selectedTradeLists, dateRange, normalizeEquity, startingCapital, contractMultipliers);
 
   // Auto-enable "Show Metrics" when files are added
   useEffect(() => {
@@ -94,38 +327,6 @@ const App = () => {
     }
   }, [showCorrelation, selectedTradeLists, dailyReturnsMap]);
 
-  // Dynamically load GoHighLevel iframe and script to avoid React DOM conflicts
-  useEffect(() => {
-    // Create iframe
-    const iframe = document.createElement('iframe');
-    iframe.src = 'https://www.5minfutures.com/widget/form/l3khVe6UJotvm6ZyPj1n';
-    iframe.style.cssText = 'display:none;width:100%;height:100%;border:none;border-radius:3px';
-    iframe.id = 'popup-l3khVe6UJotvm6ZyPj1n';
-    iframe.setAttribute('data-layout', "{'id':'POPUP'}");
-    iframe.setAttribute('data-trigger-type', 'showAfter');
-    iframe.setAttribute('data-trigger-value', '10'); // Immediate display
-    iframe.setAttribute('data-activation-type', 'alwaysActivated');
-    iframe.setAttribute('data-activation-value', '');
-    iframe.setAttribute('data-deactivation-type', 'leadCollected');
-    iframe.setAttribute('data-deactivation-value', '');
-    iframe.setAttribute('data-form-name', 'Trading Form ');
-    iframe.setAttribute('data-height', '340');
-    iframe.setAttribute('data-layout-iframe-id', 'popup-l3khVe6UJotvm6ZyPj1n');
-    iframe.setAttribute('data-form-id', 'l3khVe6UJotvm6ZyPj1n');
-    iframe.title = 'Trading Form ';
-    document.body.appendChild(iframe);
-
-    // Load script
-    const script = document.createElement('script');
-    script.src = 'https://www.5minfutures.com/js/form_embed.js';
-    script.async = true;
-    document.body.appendChild(script);
-
-    return () => {
-      if (document.body.contains(iframe)) document.body.removeChild(iframe);
-      if (document.body.contains(script)) document.body.removeChild(script);
-    };
-  }, []);
 
   const readFileContent = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -186,6 +387,11 @@ const App = () => {
       newSet.delete(filename);
       return newSet;
     });
+    setStrategyAccountMap(prev => {
+      const next = { ...prev };
+      delete next[filename];
+      return next;
+    });
   };
 
   const exportCleanedData = (filename: string) => {
@@ -236,16 +442,19 @@ const App = () => {
     });
   };
 
+  // Fetches ALL strategies for all linked accounts — never filtered by selectedAccountIds.
+  // Display filtering is handled by the displayCleanedData memo.
   const fetchFromSupabase = async () => {
     setProcessing(true);
     setErrors([]);
 
     try {
       // Fetch strategies (without embedded trades to avoid nested query limits)
-      const { data: strategies, error: strategiesError } = await supabase
+      let query = supabase
         .from('strategies')
         .select(`
           strategy_id,
+          account_id,
           market,
           direction,
           strategy_name,
@@ -256,6 +465,12 @@ const App = () => {
           margin_required,
           is_benchmark
         `);
+
+      if (linkedAccountIds.length > 0) {
+        query = query.in('account_id', linkedAccountIds);
+      }
+
+      const { data: strategies, error: strategiesError } = await query;
 
       if (strategiesError) {
         const errorDetails = [
@@ -273,29 +488,51 @@ const App = () => {
       // Type assertion for strategies with trades property
       const typedStrategies = strategies as StrategyFromDB[];
 
-      // Fetch trades for each strategy separately to avoid embedded resource limits
-      for (const strategy of typedStrategies) {
-        const { data: trades, error: tradesError } = await supabase
-          .from('trades')
-          .select('trade_date, trade_time, profit, trade_type, notes')
-          .eq('strategy_id', strategy.strategy_id)
-          .order('trade_date', { ascending: true })
-          .order('trade_time', { ascending: true })
-          .limit(10000); // Explicit high limit to get all trades
-
-        if (tradesError) {
-          throw new Error(`Failed to fetch trades for ${strategy.strategy_id}: ${tradesError.message}`);
+      // Fetch display name aliases for the current user
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const newAliasMap: AliasMap = {};
+      if (currentUser && linkedAccountIds.length > 0) {
+        const { data: aliases } = await supabase
+          .from('strategy_aliases')
+          .select('account_id, strategy_id, display_name, portfolio_display_name')
+          .eq('user_id', currentUser.id)
+          .in('account_id', linkedAccountIds);
+        if (aliases) {
+          for (const a of aliases) {
+            newAliasMap[`${a.account_id}::${a.strategy_id}`] = {
+              displayName: a.display_name,
+              portfolioDisplayName: a.portfolio_display_name,
+            };
+          }
         }
-
-        // Attach trades to strategy object
-        strategy.trades = (trades as DatabaseTrade[]) || [];
       }
+
+      // Fetch trades for all strategies in parallel to avoid N serial round trips
+      await Promise.all(
+        typedStrategies.map(async (strategy) => {
+          const { data: trades, error: tradesError } = await supabase
+            .from('trades')
+            .select('trade_date, trade_time, profit, trade_type, notes')
+            .eq('strategy_id', strategy.strategy_id)
+            .order('trade_date', { ascending: true })
+            .order('trade_time', { ascending: true })
+            .limit(10000); // Explicit high limit to get all trades
+
+          if (tradesError) {
+            throw new Error(`Failed to fetch trades for ${strategy.strategy_id}: ${tradesError.message}`);
+          }
+
+          // Attach trades to strategy object
+          strategy.trades = (trades as DatabaseTrade[]) || [];
+        })
+      );
 
       // Transform database data to cleanedData format
       const newCleanedData: CleanedData = { ...cleanedData };
       const newFilenames: string[] = [];
       const fileErrors: string[] = [];
       const newStrategyIdMap: Record<string, string> = { ...strategyIdMap };
+      const newStrategyAccountMap: Record<string, string> = { ...strategyAccountMap };
 
       for (const strategy of typedStrategies) {
         try {
@@ -309,6 +546,8 @@ const App = () => {
           
           // Store mapping for deletion
           newStrategyIdMap[filename] = strategy.strategy_id;
+          // Store account mapping for display filtering
+          if (strategy.account_id) newStrategyAccountMap[filename] = strategy.account_id;
 
           // Calculate metrics from database trades
           const metrics = calculateMetricsFromDatabase(strategy.trades, strategy);
@@ -362,8 +601,10 @@ const App = () => {
       }
 
       // Update cleanedData state
+      setAliasMap(newAliasMap);
       setCleanedData(newCleanedData);
       setStrategyIdMap(newStrategyIdMap);
+      setStrategyAccountMap(newStrategyAccountMap);
 
       // Auto-select newly loaded strategies
       setSelectedTradeLists(prev => {
@@ -437,8 +678,13 @@ const App = () => {
           // If successful, remove from local state
           removeFile(filename);
           
-          // Also remove from strategyIdMap
+          // Also remove from strategyIdMap and strategyAccountMap
           setStrategyIdMap(prev => {
+            const next = { ...prev };
+            delete next[filename];
+            return next;
+          });
+          setStrategyAccountMap(prev => {
             const next = { ...prev };
             delete next[filename];
             return next;
@@ -457,9 +703,69 @@ const App = () => {
     }
   };
 
+  const onUpdateAlias = async (
+    accountId: string,
+    strategyId: string,
+    names: { displayName?: string; portfolioDisplayName?: string }
+  ) => {
+    console.log('[onUpdateAlias] called', { accountId, strategyId, names });
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) { console.warn('[onUpdateAlias] no authenticated user'); return; }
+
+    const key = `${accountId}::${strategyId}`;
+    const existing = aliasMap[key];
+
+    // undefined = "don't change field"; empty string = "clear override"
+    const newDisplayName = names.displayName !== undefined
+      ? (names.displayName || null)
+      : (existing?.displayName ?? null);
+    const newPortfolioDisplayName = names.portfolioDisplayName !== undefined
+      ? (names.portfolioDisplayName || null)
+      : (existing?.portfolioDisplayName ?? null);
+
+    if (!newDisplayName && !newPortfolioDisplayName) {
+      // Both empty — delete the alias row
+      const { error: delError } = await supabase.from('strategy_aliases').delete()
+        .eq('user_id', currentUser.id)
+        .eq('account_id', accountId)
+        .eq('strategy_id', strategyId);
+      if (delError) console.error('[onUpdateAlias] delete error', delError);
+      setAliasMap(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } else {
+      const { error: upsertError } = await supabase.from('strategy_aliases').upsert(
+        {
+          user_id: currentUser.id,
+          account_id: accountId,
+          strategy_id: strategyId,
+          display_name: newDisplayName,
+          portfolio_display_name: newPortfolioDisplayName,
+        },
+        { onConflict: 'user_id,account_id,strategy_id' }
+      );
+      if (upsertError) console.error('[onUpdateAlias] upsert error', upsertError);
+      setAliasMap(prev => ({
+        ...prev,
+        [key]: { displayName: newDisplayName, portfolioDisplayName: newPortfolioDisplayName },
+      }));
+    }
+  };
+
   return (
     <div className="container mx-auto p-2 sm:p-4 max-w-7xl">
-      <ButtonSection onFetchSupabase={fetchFromSupabase} processing={processing} />
+      <ButtonSection
+        onFetchSupabase={fetchFromSupabase}
+        processing={processing}
+        onAccountsLoaded={(ids) => {
+          setLinkedAccountIds(ids);
+          setSelectedAccountIds(new Set(ids)); // default: all accounts selected
+        }}
+        selectedAccountIds={selectedAccountIds}
+        onSelectedAccountIdsChange={setSelectedAccountIds}
+      />
       <Header />
       <UploadSection onFileChange={(e) => {
         const target = e.target as HTMLInputElement;
@@ -470,9 +776,16 @@ const App = () => {
       {errors.length > 0 && <ErrorList errors={errors} />}
       {files.length > 0 && <UploadedFilesList files={files} cleanedData={cleanedData} errors={errors} onRemove={removeFile} onExport={exportCleanedData} show={showUploadedFiles} onToggle={setShowUploadedFiles} />}
       {Object.keys(cleanedData).length > 0 && <AnalyticsControls showMetrics={showMetrics} setShowMetrics={setShowMetrics} showPortfolio={showPortfolio} setShowPortfolio={setShowPortfolio} showCorrelation={showCorrelation} setShowCorrelation={setShowCorrelation} />}
-      {showPortfolio && allMetrics && Object.keys(allMetrics).length > 0 && <PortfolioSection allMetrics={allMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={sortedAndFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
-      {showCorrelation && allMetrics && Object.keys(allMetrics).length > 0 && <CorrelationSection selectedTradeLists={selectedTradeLists} dailyReturnsMap={dailyReturnsMap} correlationThreshold={correlationThreshold} setCorrelationThreshold={setCorrelationThreshold} correlationMatrix={correlationMatrix} correlationCalculating={correlationCalculating} onExport={exportCorrelationData} allMetrics={allMetrics} />}
-      {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={sortedAndFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} />}
+      {Object.keys(cleanedData).length > 0 && allPortfolioNames.length > 0 && (
+        <PortfolioDropdown
+          portfolioNames={allPortfolioNames}
+          selectedNames={selectedPortfolioNames}
+          onChange={setSelectedPortfolioNames}
+        />
+      )}
+      {showPortfolio && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <PortfolioSection allMetrics={portfolioFilteredAllMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} dateRange={dateRange} setDateRange={setDateRange} chartType={chartType} setChartType={setChartType} normalizeEquity={normalizeEquity} setNormalizeEquity={setNormalizeEquity} startingCapital={startingCapital} setStartingCapital={setStartingCapital} portfolioData={portfolioData} individualChartsData={individualChartsData} showMetrics={showMetrics} sortedAndFilteredMetrics={portfolioFilteredMetrics} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} strategyAccountMap={strategyAccountMap} onUpdateAlias={onUpdateAlias} savedViews={savedViews} onSaveView={savePortfolioView} onLoadView={loadPortfolioView} onDeleteView={deletePortfolioView} />}
+      {showCorrelation && portfolioFilteredAllMetrics && Object.keys(portfolioFilteredAllMetrics).length > 0 && <CorrelationSection selectedTradeLists={selectedTradeLists} dailyReturnsMap={dailyReturnsMap} correlationThreshold={correlationThreshold} setCorrelationThreshold={setCorrelationThreshold} correlationMatrix={correlationMatrix} correlationCalculating={correlationCalculating} onExport={exportCorrelationData} allMetrics={portfolioFilteredAllMetrics} />}
+      {showMetrics && !showPortfolio && Object.keys(cleanedData).length > 0 && allMetrics && Object.keys(allMetrics).length > 0 && <MetricsTable sortedAndFilteredMetrics={portfolioFilteredMetrics} selectedTradeLists={selectedTradeLists} setSelectedTradeLists={setSelectedTradeLists} toggleSelection={toggleTradeListSelection} contractMultipliers={contractMultipliers} handleContractChange={handleContractChange} masterContractValue={masterContractValue} setMasterContractValue={setMasterContractValue} applyMasterToAll={applyMasterToFiltered} sortConfig={sortConfig} handleSort={handleSort} sortPriorities={sortPriorities} showAdvancedSort={showAdvancedSort} setShowAdvancedSort={setShowAdvancedSort} addSortPriority={addSortPriority} removeSortPriority={removeSortPriority} updateSortPriority={updateSortPriority} clearSorting={clearSorting} applyAdvancedSort={applyAdvancedSort} onDeleteStrategy={handleDeleteStrategy} strategyIdMap={strategyIdMap} strategyAccountMap={strategyAccountMap} onUpdateAlias={onUpdateAlias} />}
       {Object.keys(cleanedData).length > 0 && <SessionComplete />}
     </div>
   );

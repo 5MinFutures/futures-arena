@@ -34,6 +34,7 @@ interface Metrics {
   direction: string;
   intradayStatus: string | null;
   strategyName: string;
+  portfolioHint?: string | null;
   isBenchmark: boolean;
   isFutures: boolean;
   originalFilename: string;
@@ -161,10 +162,11 @@ export const parseFilenameComponents = (filename: string | null): {
   direction: string;
   intradayStatus: string | null;
   strategyName: string;
+  portfolioHint: string | null;
   isBenchmark: boolean;
   isFutures: boolean;
 } => {
-  if (!filename) return { symbol: '', direction: 'Unknown', intradayStatus: null, strategyName: filename || '', isBenchmark: false, isFutures: false };
+  if (!filename) return { symbol: '', direction: 'Unknown', intradayStatus: null, strategyName: filename || '', portfolioHint: null, isBenchmark: false, isFutures: false };
   const baseName = filename.replace('.csv', '');
   const isBenchmark = baseName.toLowerCase().includes('_benchmark');
   let symbol = '';
@@ -194,17 +196,27 @@ export const parseFilenameComponents = (filename: string | null): {
     intradayStatus = 'DTH';
     remaining = remaining.replace(/DTH/gi, '').replace(/^_+|_+$/g, '');
   }
-  let strategyName;
+  let strategyName: string;
+  let portfolioHint: string | null = null;
   if (isBenchmark) {
     strategyName = symbol || 'Unknown';
   } else {
-    strategyName = remaining.replace(/^_+|_+$/g, '').replace(/_+/g, '_') || 'Unknown Strategy';
+    const cleaned = remaining.replace(/^_+|_+$/g, '');
+    const firstUnderscore = cleaned.indexOf('_');
+    if (firstUnderscore >= 0) {
+      portfolioHint = cleaned.slice(0, firstUnderscore) || null;
+      strategyName = cleaned.slice(firstUnderscore + 1) || 'Unknown Strategy';
+    } else {
+      portfolioHint = '--';
+      strategyName = cleaned || 'Unknown Strategy';
+    }
   }
   return {
     symbol: symbol || 'Unknown',
     direction,
     intradayStatus,
     strategyName,
+    portfolioHint,
     isBenchmark,
     isFutures: false
   };
@@ -494,54 +506,35 @@ export const calculatePearsonCorrelation = (x: number[], y: number[]): number =>
 
 export const calculateSpearmanCorrelation = (array1: number[], array2: number[]): number => {
   if (array1.length !== array2.length || array1.length < 3) {
-    console.log('Correlation error: arrays length mismatch or too short', array1.length, array2.length);
     return 0;
   }
-  console.log('Calculating correlation for arrays:');
-  console.log('Array1:', array1.slice(0, 5), '... (length:', array1.length, ')');
-  console.log('Array2:', array2.slice(0, 5), '... (length:', array2.length, ')');
   const ranks1 = calculateRanks(array1);
   const ranks2 = calculateRanks(array2);
-  console.log('Ranks1:', ranks1.slice(0, 5), '...');
-  console.log('Ranks2:', ranks2.slice(0, 5), '...');
-  const correlation = calculatePearsonCorrelation(ranks1, ranks2);
-  console.log('Final correlation result:', correlation.toFixed(4));
-  return correlation;
+  return calculatePearsonCorrelation(ranks1, ranks2);
 };
 
 export const buildCorrelationMatrix = (dailyReturnsMap: Map<string, number[]>, strategies: Set<string>): { matrix: number[][]; strategies: string[]; size: number } | null => {
   if (strategies.size < 2) return null;
-  console.log('=== CORRELATION MATRIX DEBUG ===');
-  console.log('Building matrix for strategies:', Array.from(strategies));
-  const matrix: number[][] = [];
+
   const strategyNames = Array.from(strategies);
-  for (let i = 0; i < strategyNames.length; i++) {
-    const row: number[] = [];
-    for (let j = 0; j < strategyNames.length; j++) {
-      if (i === j) {
-        row.push(1.0);
-      } else {
-        const returns1 = dailyReturnsMap.get(strategyNames[i]) || [];
-        const returns2 = dailyReturnsMap.get(strategyNames[j]) || [];
-        console.log(`\n--- Correlating ${strategyNames[i]} vs ${strategyNames[j]} ---`);
-        console.log(`Returns1 length: ${returns1.length}, Returns2 length: ${returns2.length}`);
-        if (returns1.length > 0 && returns2.length > 0) {
-          const correlation = calculateSpearmanCorrelation(returns1, returns2);
-          console.log(`Final correlation ${strategyNames[i]} vs ${strategyNames[j]}: ${correlation.toFixed(4)}`);
-          row.push(correlation);
-        } else {
-          console.log('No data available for correlation');
-          row.push(0);
-        }
-      }
+  const n = strategyNames.length;
+  const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+
+  for (let i = 0; i < n; i++) {
+    matrix[i][i] = 1.0;
+    for (let j = i + 1; j < n; j++) {
+      const returns1 = dailyReturnsMap.get(strategyNames[i]) || [];
+      const returns2 = dailyReturnsMap.get(strategyNames[j]) || [];
+      const correlation =
+        returns1.length > 0 && returns2.length > 0
+          ? calculateSpearmanCorrelation(returns1, returns2)
+          : 0;
+      matrix[i][j] = correlation;
+      matrix[j][i] = correlation;
     }
-    matrix.push(row);
   }
-  return {
-    matrix,
-    strategies: strategyNames,
-    size: strategyNames.length
-  };
+
+  return { matrix, strategies: strategyNames, size: n };
 };
 
 export const getSymbolPositionMargin = (filename: string | null): { symbol: string; position: string; margin: number; isBenchmark: boolean; isStockBenchmark: boolean } | null => {
@@ -702,6 +695,7 @@ export const calculateMetricsFromDatabase = (
     direction: strategyMetadata.direction,
     intradayStatus: strategyMetadata.is_intraday ? 'DTH' : null,
     strategyName: strategyMetadata.strategy_name,
+    portfolioHint: strategyMetadata.portfolio_hint ?? '--',
     isBenchmark: strategyMetadata.is_benchmark,
     isFutures: strategyMetadata.market in marginRates,
     originalFilename: filename + '.csv'

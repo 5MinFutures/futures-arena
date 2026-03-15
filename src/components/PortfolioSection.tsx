@@ -97,7 +97,81 @@ interface PortfolioSectionProps {
   applyAdvancedSort: () => void;
   onDeleteStrategy: (filename: string) => void;
   strategyIdMap: Record<string, string>;
+  strategyAccountMap: Record<string, string>;
+  onUpdateAlias: (accountId: string, strategyId: string, names: { displayName?: string; portfolioDisplayName?: string }) => void;
+  savedViews: Array<{ id: string; name: string; created_at: string }>;
+  onSaveView: (name: string) => void;
+  onLoadView: (id: string) => void;
+  onDeleteView: (id: string) => void;
 }
+
+interface SaveViewRowProps {
+  savedViews: Array<{ id: string; name: string; created_at: string }>;
+  onSaveView: (name: string) => void;
+  onLoadView: (id: string) => void;
+  onDeleteView: (id: string) => void;
+}
+
+const SaveViewRow = ({ savedViews, onSaveView, onLoadView, onDeleteView }: SaveViewRowProps) => {
+  const [viewName, setViewName] = useState('');
+  const [selectedViewId, setSelectedViewId] = useState<string>('');
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        value={viewName}
+        onChange={e => setViewName(e.target.value)}
+        placeholder="View name..."
+        className="border border-gray-300 rounded px-2 py-1 text-sm"
+      />
+      <button
+        onClick={() => { if (viewName.trim()) { onSaveView(viewName.trim()); setViewName(''); } }}
+        disabled={!viewName.trim()}
+        className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40"
+      >
+        Save View
+      </button>
+      {savedViews.length > 0 && (
+        <>
+          <select
+            value={selectedViewId}
+            onChange={e => {
+              const id = e.target.value;
+              setSelectedViewId(id);
+              if (id) {
+                onLoadView(id);
+                const view = savedViews.find(v => v.id === id);
+                if (view) setViewName(view.name);
+              }
+            }}
+            className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700"
+          >
+            <option value="">Load saved view…</option>
+            {savedViews.map(v => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedViewId) {
+                onDeleteView(selectedViewId);
+                setSelectedViewId('');
+                setViewName('');
+              }
+            }}
+            disabled={!selectedViewId}
+            className="px-2 py-1 text-sm text-red-600 disabled:opacity-40"
+            title="Delete selected view"
+          >
+            🗑
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
 
 const PortfolioSection = ({
   allMetrics,
@@ -132,7 +206,13 @@ const PortfolioSection = ({
   clearSorting,
   applyAdvancedSort,
   onDeleteStrategy,
-  strategyIdMap
+  strategyIdMap,
+  strategyAccountMap,
+  onUpdateAlias,
+  savedViews,
+  onSaveView,
+  onLoadView,
+  onDeleteView,
 }: PortfolioSectionProps) => {
   const [showAdvancedMetrics, setShowAdvancedMetrics] = useState(false);
   const [riskFreeRate, setRiskFreeRate] = useState<number>(4); // Default 4% annual risk-free rate
@@ -388,6 +468,8 @@ const PortfolioSection = ({
           applyAdvancedSort={applyAdvancedSort}
           onDeleteStrategy={onDeleteStrategy}
           strategyIdMap={strategyIdMap}
+          strategyAccountMap={strategyAccountMap}
+          onUpdateAlias={onUpdateAlias}
         />
       )}
       {selectedTradeLists.size > 0 && (
@@ -462,6 +544,13 @@ const PortfolioSection = ({
           </div>
         </div>
       )}
+      {/* Saved Views */}
+      <SaveViewRow
+        savedViews={savedViews}
+        onSaveView={onSaveView}
+        onLoadView={onLoadView}
+        onDeleteView={onDeleteView}
+      />
       {selectedTradeLists.size === 0 && (
         <div className="p-3 sm:p-4 bg-gray-100 border border-gray-200 rounded-lg text-center">
           <p className="text-xs sm:text-sm text-gray-600">Select at least one trading strategy from the metrics table to view portfolio analysis.</p>
